@@ -112,6 +112,16 @@ class Customers_Controller extends WC_REST_Customers_Controller {
 			}
 		}
 
+		// Add 'roles' filter, this allows us to filter by multiple roles.
+		$params['roles'] = array(
+			'description'       => __( 'Filter customers by roles.', 'woocommerce-pos' ),
+			'type'              => 'array',
+			'items'             => array(
+				'type'          => 'string',
+			),
+			'required'          => false,
+		);
+
 		return $params;
 	}
 
@@ -127,6 +137,17 @@ class Customers_Controller extends WC_REST_Customers_Controller {
 		if ( is_wp_error( $valid_email ) ) {
 			return $valid_email;
 		}
+
+		/**
+		 * Generate a password for the new user.
+		 * Add filter for get_option key 'woocommerce_registration_generate_password' to ensure it is set to 'yes'.
+		 */
+		add_filter(
+			'pre_option_woocommerce_registration_generate_password',
+			function () {
+				return 'yes';
+			}
+		);
 
 		// Proceed with the parent method to handle the creation
 		return parent::create_item( $request );
@@ -477,6 +498,14 @@ class Customers_Controller extends WC_REST_Customers_Controller {
 		// Handle include/exclude.
 		if ( isset( $request['wcpos_include'] ) || isset( $request['wcpos_exclude'] ) ) {
 			add_action( 'pre_user_query', array( $this, 'wcpos_include_exclude_users_by_id' ) );
+		}
+
+		// Filter by roles (this is a comma separated list of roles).
+		if ( ! empty( $request['roles'] ) && is_array( $request['roles'] ) ) {
+			$roles = array_map( 'sanitize_text_field', $request['roles'] );
+			$prepared_args['role__in'] = $roles;
+			// remove $prepared_args['role'] to prevent it from overriding $prepared_args['role__in']
+			unset( $prepared_args['role'] );
 		}
 
 		return $prepared_args;
