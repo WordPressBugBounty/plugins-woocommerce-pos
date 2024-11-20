@@ -210,6 +210,7 @@ return array(
     'WCPOS\\WooCommercePOS\\Gateways\\Cash' => $baseDir . '/includes/Gateways/Cash.php',
     'WCPOS\\WooCommercePOS\\Init' => $baseDir . '/includes/Init.php',
     'WCPOS\\WooCommercePOS\\Integrations\\WPSEO' => $baseDir . '/includes/Integrations/WPSEO.php',
+    'WCPOS\\WooCommercePOS\\Integrations\\WePOS' => $baseDir . '/includes/Integrations/WePOS.php',
     'WCPOS\\WooCommercePOS\\Logger' => $baseDir . '/includes/Logger.php',
     'WCPOS\\WooCommercePOS\\Orders' => $baseDir . '/includes/Orders.php',
     'WCPOS\\WooCommercePOS\\Pro' => $baseDir . '/includes/Pro.php',
