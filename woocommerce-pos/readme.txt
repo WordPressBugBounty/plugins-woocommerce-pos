@@ -3,7 +3,7 @@ Contributors: kilbot
 Tags: ecommerce, point-of-sale, pos, inventory, woocommerce
 Requires at least: 5.6
 Tested up to: 6.7
-Stable tag: 1.7.1
+Stable tag: 1.7.2
 License: GPL-3.0
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 
@@ -16,28 +16,31 @@ WooCommerce POS is a simple application for taking orders at the Point of Sale u
 > 🕒 Install and start taking orders in less than 2 minutes.
 
 = 🎥 DEMO =
-You can see a demo of the WooCommerce POS plugin in action by going to [https://demo.wcpos.com/pos](https://demo.wcpos.com/pos) with 🔑`login/pass` : `demo/demo`
+You can see a demo of the WooCommerce POS plugin in action by going to [demo.wcpos.com/pos](https://demo.wcpos.com/pos) with 🔑`login/pass` : `demo/demo`
 or download the desktop application:
 ⬇️ [Download WooCommerce POS for Windows](https://updates.wcpos.com/electron/download/win32-x64)
 ⬇️ [Download WooCommerce POS for Mac (Intel)](https://updates.wcpos.com/electron/download/darwin-x64)
 ⬇️ [Download WooCommerce POS for Mac (Apple Silicon)](https://updates.wcpos.com/electron/download/darwin-arm64)
 
 = ✨ FEATURES = 
-* Available cross-platform via browser or desktop application _(iOS and Android coming soon)_
-* Offline storage for fast product search and order processing
-* Manage product stock levels and pricing quickly
-* Add new customers or checkout via Guest account
-* Add miscellaneous products to cart, ie: products not in WooCommerce
-* Live chat support within the application
+* **Cross-platform:** Accessible via browser or desktop application _(iOS & Android coming soon)_
+* **Offline Storage:** Fast product search and order processing
+* **Flexible Cart:** Add products not listed in WooCommerce
+* **Barcode Support:** Scan products directly into the cart
+* **Custom Receipts:** Tailor receipt templates with PHP
+* **Multilingual:** Available in most major languages
+* **Built-in Support:** Access live chat for instant help
 
-= 🔓 [PRO FEATURES](https://wcpos.com/pro) = 
+= 🔓 PRO FEATURES = 
 * **Stock Management:** quickly adjust stock levels, pricing and more
 * **Order Management:** re-open and print receipts for older orders
 * **Customer Management:** create new customers and edit customer details
 * **Payment Gateways:** use any gateway for checkout
 * **End of Day Reports:** summarise daily sales, transactions, and cash flow for reconciliation
 * **Stores:** Manage locations with unique tax settings, pricing and receipts
-* **Priority [Discord support](https://wcpos.com/discord):** (usually < 1 hour)
+* **Priority [Discord support](https://wcpos.com/discord):** one-on-one support via private chat
+
+*Discover all PRO features at [wcpos.com/pro](https://wcpos.com/pro)*
 
 = 📋 REQUIREMENTS =
 * WordPress >= 5.6
@@ -84,6 +87,15 @@ There is more information on our website at [https://wcpos.com](https://wcpos.co
 1. WooCommerce POS main screen
 
 == Changelog ==
+
+= 1.7.2 - 2024/12/27 =
+* Fix: Negative fees with tax_status='none' and/or tax_class are now applied correctly to the order
+* Fix: Remove routes from WP API index for POS to reduce request size
+* Fix: Annoying issue where pagination resets while searching
+* Fix: Minor cart display issues
+* Fix: Add html decode for special characters
+* Fix: Remove 'low stock' as an option in the products filter - this status does not exist
+* Fix: Variation attributes doubling when barcode scanning
 
 = 1.7.1 - 2024/11/14 = 
 * Fix: Error updating quantity for Product Variations when decimal quantities enabled
