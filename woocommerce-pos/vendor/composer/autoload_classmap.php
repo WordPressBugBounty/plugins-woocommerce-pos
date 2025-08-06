@@ -204,6 +204,7 @@ return array(
     'WCPOS\\WooCommercePOS\\Admin\\Settings' => $baseDir . '/includes/Admin/Settings.php',
     'WCPOS\\WooCommercePOS\\Admin\\Updaters\\Pro_Plugin_Updater' => $baseDir . '/includes/Admin/Updaters/Pro_Plugin_Updater.php',
     'WCPOS\\WooCommercePOS\\Deactivator' => $baseDir . '/includes/Deactivator.php',
+    'WCPOS\\WooCommercePOS\\Emails' => $baseDir . '/includes/Emails.php',
     'WCPOS\\WooCommercePOS\\Form_Handler' => $baseDir . '/includes/Form_Handler.php',
     'WCPOS\\WooCommercePOS\\Gateways' => $baseDir . '/includes/Gateways.php',
     'WCPOS\\WooCommercePOS\\Gateways\\Card' => $baseDir . '/includes/Gateways/Card.php',
