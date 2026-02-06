@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name:       WooCommerce POS
+ * Plugin Name:       WCPOS – Point of Sale for WooCommerce
  * Plugin URI:        https://wordpress.org/plugins/woocommerce-pos/
  * Description:       A simple front-end for taking WooCommerce orders at the Point of Sale. Requires <a href="http://wordpress.org/plugins/woocommerce/">WooCommerce</a>.
- * Version:           1.7.13
+ * Version:           1.8.7
  * Author:            kilbot
  * Author URI:        http://wcpos.com
  * Text Domain:       woocommerce-pos
@@ -11,7 +11,7 @@
  * License URI:       http://www.gnu.org/licenses/gpl-3.0.txt
  * Domain Path:       /languages
  * Requires at least: 5.6
- * Tested up to:      6.8
+ * Tested up to:      6.9
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
  * WC tested up to:   10.0
@@ -22,18 +22,53 @@
 
 namespace WCPOS\WooCommercePOS;
 
-// Define plugin constants.
-const VERSION     = '1.7.13';
-const PLUGIN_NAME = 'woocommerce-pos';
-const SHORT_NAME  = 'wcpos';
-\define( __NAMESPACE__ . '\PLUGIN_FILE', plugin_basename( __FILE__ ) ); // 'woocommerce-pos/woocommerce-pos.php'
-\define( __NAMESPACE__ . '\PLUGIN_PATH', trailingslashit( plugin_dir_path( __FILE__ ) ) );
-\define( __NAMESPACE__ . '\PLUGIN_URL', trailingslashit( plugin_dir_url( __FILE__ ) ) );
+// Define plugin constants (use define() with checks to avoid conflicts when Pro plugin is active).
+if ( ! \defined( __NAMESPACE__ . '\VERSION' ) ) {
+	\define( __NAMESPACE__ . '\VERSION', '1.8.7' );
+}
+if ( ! \defined( __NAMESPACE__ . '\PLUGIN_NAME' ) ) {
+	\define( __NAMESPACE__ . '\PLUGIN_NAME', 'woocommerce-pos' );
+}
+if ( ! \defined( __NAMESPACE__ . '\SHORT_NAME' ) ) {
+	\define( __NAMESPACE__ . '\SHORT_NAME', 'wcpos' );
+}
+if ( ! \defined( __NAMESPACE__ . '\PLUGIN_FILE' ) ) {
+	\define( __NAMESPACE__ . '\PLUGIN_FILE', plugin_basename( __FILE__ ) ); // 'woocommerce-pos/woocommerce-pos.php'
+}
+if ( ! \defined( __NAMESPACE__ . '\PLUGIN_PATH' ) ) {
+	\define( __NAMESPACE__ . '\PLUGIN_PATH', trailingslashit( plugin_dir_path( __FILE__ ) ) );
+}
+if ( ! \defined( __NAMESPACE__ . '\PLUGIN_URL' ) ) {
+	\define( __NAMESPACE__ . '\PLUGIN_URL', trailingslashit( plugin_dir_url( __FILE__ ) ) );
+}
 
 // Minimum requirements.
-const WC_MIN_VERSION  = '5.3';
-const PHP_MIN_VERSION = '7.4';
-const MIN_PRO_VERSION = '1.5.0';
+if ( ! \defined( __NAMESPACE__ . '\WC_MIN_VERSION' ) ) {
+	\define( __NAMESPACE__ . '\WC_MIN_VERSION', '5.3' );
+}
+if ( ! \defined( __NAMESPACE__ . '\PHP_MIN_VERSION' ) ) {
+	\define( __NAMESPACE__ . '\PHP_MIN_VERSION', '7.4' );
+}
+if ( ! \defined( __NAMESPACE__ . '\MIN_PRO_VERSION' ) ) {
+	\define( __NAMESPACE__ . '\MIN_PRO_VERSION', '1.8.7' );
+}
+
+// If Pro plugin is active, bail out early to avoid conflicts.
+// Pro includes all free plugin functionality, so there's no need to initialize both.
+// We check the option directly since Pro may not have loaded yet (alphabetical order).
+$pro_plugin_file = 'woocommerce-pos-pro/woocommerce-pos-pro.php';
+$active_plugins  = get_option( 'active_plugins', array() );
+$pro_is_active   = \in_array( $pro_plugin_file, $active_plugins, true );
+
+// Also check network-activated plugins on multisite.
+if ( ! $pro_is_active && is_multisite() ) {
+	$network_plugins = get_site_option( 'active_sitewide_plugins', array() );
+	$pro_is_active   = isset( $network_plugins[ $pro_plugin_file ] );
+}
+
+if ( $pro_is_active ) {
+	return;
+}
 
 // Load .env flags (for development).
 function wcpos_load_env( $file ): void {
@@ -83,7 +118,7 @@ if ( ! class_exists( Activator::class ) || ! class_exists( Deactivator::class ) 
 		function (): void {
 			?>
 			<div class="notice notice-error">
-				<p><?php esc_html_e( 'The WooCommerce POS plugin failed to load correctly.', 'woocommerce-pos' ); ?></p>
+				<p><?php esc_html_e( 'The WCPOS plugin failed to load correctly.', 'woocommerce-pos' ); ?></p>
 			</div>
 			<?php
 		}

@@ -7,7 +7,6 @@
  * @author   Paul Kilmurray <paul@kilbot.com.au>
  *
  * @see     http://www.wcpos.com
- * @package WCPOS\Admin
  */
 
 namespace WCPOS\WooCommercePOS;
@@ -24,7 +23,9 @@ use WCPOS\WooCommercePOS\Admin\Plugins;
 use WCPOS\WooCommercePOS\Admin\Products\List_Products;
 use WCPOS\WooCommercePOS\Admin\Products\Single_Product;
 use WCPOS\WooCommercePOS\Admin\Settings;
-use WCPOS\WooCommercePOS\Admin\Updaters\Pro_Plugin_Updater;
+use WCPOS\WooCommercePOS\Admin\Templates\List_Templates;
+use WCPOS\WooCommercePOS\Admin\Templates\Single_Template;
+use WP_Screen;
 
 /**
  * Admin class.
@@ -61,14 +62,16 @@ class Admin {
 
 		// register the screen handlers.
 		$this->screen_handlers = array(
-			'options-permalink' => Permalink::class,
-			'product' => Single_Product::class,
-			'edit-product' => List_Products::class,
-			'shop_order' => Single_Order::class,
-			'edit-shop_order' => List_Orders::class,
-			'plugins' => Plugins::class,
+			'options-permalink'          => Permalink::class,
+			'product'                    => Single_Product::class,
+			'edit-product'               => List_Products::class,
+			'shop_order'                 => Single_Order::class,
+			'edit-shop_order'            => List_Orders::class,
+			'plugins'                    => Plugins::class,
+			'wcpos_template'             => Single_Template::class,
+			'edit-wcpos_template'        => List_Templates::class,
 			'woocommerce_page_wc-orders' => array( $this, 'handle_wc_hpos_orders_screen' ),
-			'woocommerce_page_wc-admin' => array( $this, 'handle_wc_analytics_screen' ),
+			'woocommerce_page_wc-admin'  => array( $this, 'handle_wc_analytics_screen' ),
 		);
 	}
 
@@ -77,7 +80,36 @@ class Admin {
 	 */
 	public function init(): void {
 		new Notices();
-		new Pro_Plugin_Updater();
+
+		// Register admin-post.php handlers only when our specific actions are requested.
+		// This keeps the footprint minimal and avoids conflicts with other plugins.
+		$action = isset( $_REQUEST['action'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['action'] ) ) : '';
+		if ( \in_array( $action, array( 'wcpos_activate_template', 'wcpos_copy_template' ), true ) ) {
+			add_action( 'admin_post_wcpos_activate_template', array( $this, 'handle_activate_template' ) );
+			add_action( 'admin_post_wcpos_copy_template', array( $this, 'handle_copy_template' ) );
+		}
+	}
+
+	/**
+	 * Handle template activation via admin-post.php.
+	 * Delegates to List_Templates class.
+	 *
+	 * @return void
+	 */
+	public function handle_activate_template(): void {
+		$handler = new List_Templates();
+		$handler->activate_template();
+	}
+
+	/**
+	 * Handle template copy via admin-post.php.
+	 * Delegates to List_Templates class.
+	 *
+	 * @return void
+	 */
+	public function handle_copy_template(): void {
+		$handler = new List_Templates();
+		$handler->copy_template();
 	}
 
 	/**
@@ -90,9 +122,7 @@ class Admin {
 			'settings' => $menu->settings_screen_id,
 		);
 
-		/**
-		 * Add the settings screen using the WooCommerce POS menu ID.
-		 */
+		// Add the settings screen using the WCPOS menu ID.
 		$this->screen_handlers[ $this->menu_ids['settings'] ] = Settings::class;
 	}
 
@@ -101,27 +131,27 @@ class Admin {
 	 *
 	 * @TODO - I need to register the instances to allow remove_action/remove_filter.
 	 *
-	 * @param \WP_Screen $current_screen Current screen object.
+	 * @param WP_Screen $current_screen Current screen object.
 	 */
 	public function current_screen( $current_screen ): void {
-		/**
-		 * Backwards compatibility for WooCommerce POS Pro 1.4.2 and below.
+		/*
+		 * Backwards compatibility for WCPOS Pro 1.4.2 and below.
 		 * DO NOT USE THIS!
 		 *
-		 * @TODO: Remove in WooCommerce POS 2.0.0.
+		 * @TODO: Remove in WCPOS 2.0.0.
 		 */
 		$this->screen_handlers['product'] = apply_filters( 'woocommerce_pos_single_product_admin_class', Single_Product::class );
 
 		/**
-		 * Filters the screen handlers for WooCommerce POS admin screens.
+		 * Filters the screen handlers for WCPOS admin screens.
 		 *
 		 * @hook woocommerce_pos_admin_screen_handlers
 		 *
 		 * @since 1.4.10
 		 *
-		 * @param array       $handlers       Associative array of screen IDs and their corresponding handlers.
-		 *                                    Handler can be a class name or a callback array.
-		 * @param \WP_Screen  $current_screen The current WP_Screen object being loaded in the admin.
+		 * @param array     $handlers       Associative array of screen IDs and their corresponding handlers.
+		 *                                  Handler can be a class name or a callback array.
+		 * @param WP_Screen $current_screen The current WP_Screen object being loaded in the admin.
 		 */
 		$handlers = apply_filters( 'woocommerce_pos_admin_screen_handlers', $this->screen_handlers, $current_screen );
 
@@ -129,18 +159,15 @@ class Admin {
 		if ( isset( $handlers[ $current_screen->id ] ) ) {
 			$handler = $handlers[ $current_screen->id ];
 
-			if ( is_array( $handler ) && method_exists( $handler[0], $handler[1] ) ) {
-				call_user_func( $handler );
+			if ( \is_array( $handler ) && method_exists( $handler[0], $handler[1] ) ) {
+				\call_user_func( $handler );
 			} elseif ( class_exists( $handler ) ) {
 				new $handler();
 			}
 		}
 	}
 
-	/**
-	 *
-	 */
-	public function handle_wc_hpos_orders_screen() {
+	public function handle_wc_hpos_orders_screen(): void {
 		if ( isset( $_GET['action'] ) && 'edit' === $_GET['action'] ) {
 			new HPOS_Single_Order();
 		} else {
@@ -148,15 +175,12 @@ class Admin {
 		}
 	}
 
-	/**
-	 *
-	 */
-	public function handle_wc_analytics_screen() {
+	public function handle_wc_analytics_screen(): void {
 		if ( class_exists( '\Automattic\WooCommerce\Admin\PageController' ) ) {
 			$wc_admin_page_controller = PageController::get_instance();
 			if ( $wc_admin_page_controller ) {
 				$wc_admin_current_page    = $wc_admin_page_controller->get_current_page();
-				$id                       = $wc_admin_current_page['id'] ?? null;
+				$id                       = $wc_admin_current_page['id']     ?? null;
 				$parent                   = $wc_admin_current_page['parent'] ?? null;
 
 				if ( 'woocommerce-analytics' === $id || 'woocommerce-analytics' === $parent ) {

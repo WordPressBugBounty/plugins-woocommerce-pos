@@ -6,12 +6,12 @@
  * HOWEVER, this is not recommended , don't be surprised if your POS breaks
  */
 
-defined( 'ABSPATH' ) || exit;
+\defined( 'ABSPATH' ) || exit;
 ?>
 <!DOCTYPE html>
 <html>
 <head>
-	<title><?php esc_attr_e( 'Point of Sale', 'woocommerce-pos' ); ?> - <?php esc_html( bloginfo( 'name' ) ); ?></title>
+	<title><?php esc_html_e( 'Point of Sale', 'woocommerce-pos' ); ?> - <?php echo esc_html( bloginfo( 'name' ) ); ?></title>
 	<meta charset="utf-8"/>
 
 	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
@@ -122,7 +122,7 @@ defined( 'ABSPATH' ) || exit;
 <div id="root">
 	<div id="splash">
 		<img src="<?php echo esc_attr( WCPOS\WooCommercePOS\PLUGIN_URL ); ?>assets/img/wcpos-icon.svg"
-			 alt="WooCommerce POS"/>
+			 alt="WCPOS"/>
 	</div>
 </div>
 

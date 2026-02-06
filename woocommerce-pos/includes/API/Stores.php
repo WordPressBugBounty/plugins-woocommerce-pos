@@ -1,8 +1,6 @@
 <?php
 /**
  * Stores API.
- *
- * @package WooCommercePOS
  */
 
 namespace WCPOS\WooCommercePOS\API;
@@ -13,19 +11,20 @@ if ( ! class_exists( 'WP_REST_Controller' ) ) {
 	return;
 }
 
-use WP_REST_Controller;
+use Exception;
 use WCPOS\WooCommercePOS\Abstracts\Store;
 use const WCPOS\WooCommercePOS\SHORT_NAME;
+use WP_REST_Controller;
 
 /**
  * Stores API.
  */
 class Stores extends WP_REST_Controller {
-		/**
-		 * Endpoint namespace.
-		 *
-		 * @var string
-		 */
+	/**
+	 * Endpoint namespace.
+	 *
+	 * @var string
+	 */
 	protected $namespace = SHORT_NAME . '/v1';
 
 	/**
@@ -65,7 +64,8 @@ class Stores extends WP_REST_Controller {
 	 * Retrieve store data.
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
-	 * @return WP_REST_Response|WP_Error Response object on success, or WP_Error object on failure.
+	 *
+	 * @return WP_Error|WP_REST_Response Response object on success, or WP_Error object on failure.
 	 */
 	public function get_items( $request ) {
 		try {
@@ -73,17 +73,16 @@ class Stores extends WP_REST_Controller {
 
 			$response = array();
 			foreach ( $stores as $store ) {
-				$data = $this->prepare_item_for_response( $store, $request );
+				$data       = $this->prepare_item_for_response( $store, $request );
 				$response[] = $this->prepare_response_for_collection( $data );
 			}
 
 			$response = rest_ensure_response( $response );
-			$response->header( 'X-WP-Total', count( $stores ) );
+			$response->header( 'X-WP-Total', \count( $stores ) );
 			$response->header( 'X-WP-TotalPages', 1 );
 
 			return $response;
-
-		} catch ( \Exception $e ) {
+		} catch ( Exception $e ) {
 			return new \WP_Error(
 				'woocommerce_pos_store_retrieval_failed',
 				esc_html__( 'Failed to retrieve store data', 'woocommerce-pos' ),
@@ -96,7 +95,8 @@ class Stores extends WP_REST_Controller {
 	 * Retrieve a single store.
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
-	 * @return WP_REST_Response|WP_Error Response object on success, or WP_Error object on failure.
+	 *
+	 * @return WP_Error|WP_REST_Response Response object on success, or WP_Error object on failure.
 	 */
 	public function get_item( $request ) {
 		$store = wcpos_get_store( $request['id'] );
@@ -117,16 +117,17 @@ class Stores extends WP_REST_Controller {
 	/**
 	 * Prepare a single product output for response.
 	 *
-	 * @param Store           $store    Store object.
+	 * @param Store           $store   Store object.
 	 * @param WP_REST_Request $request Request object.
+	 *
 	 * @return WP_REST_Response
 	 */
 	public function prepare_item_for_response( $store, $request ) {
-		$data = $store->get_data();
+		$data     = $store->get_data();
 		$response = rest_ensure_response( $data );
 		$response->add_links( $this->prepare_links( $store, $request ) );
 
-		/**
+		/*
 		 * Filter the data for a response.
 		 *
 		 * The dynamic portion of the hook name, $this->post_type, refers to post_type of the post being
@@ -146,33 +147,33 @@ class Stores extends WP_REST_Controller {
 	 */
 	public function check_permissions() {
 		if ( ! is_user_logged_in() ) {
-				return new \WP_Error(
-					'woocommerce_pos_rest_forbidden',
-					esc_html__( 'You do not have permissions to view this data.', 'woocommerce-pos' ),
-					array( 'status' => rest_authorization_required_code() )
-				);
+			return new \WP_Error(
+				'woocommerce_pos_rest_forbidden',
+				esc_html__( 'You do not have permissions to view this data.', 'woocommerce-pos' ),
+				array( 'status' => rest_authorization_required_code() )
+			);
 		}
 
 		return true;
 	}
 
-		/**
-		 * Prepare links for the request.
-		 *
-		 * @param WC_Product      $product Product object.
-		 * @param WP_REST_Request $request Request object.
-		 * @return array Links for the given product.
-		 */
+	/**
+	 * Prepare links for the request.
+	 *
+	 * @param WC_Product      $product Product object.
+	 * @param WP_REST_Request $request Request object.
+	 * @param mixed           $store
+	 *
+	 * @return array Links for the given product.
+	 */
 	protected function prepare_links( $store, $request ) {
-		$links = array(
+		return array(
 			'self' => array(
-				'href' => rest_url( sprintf( '/%s/%s/%d', $this->namespace, $this->rest_base, $store->get_id() ) ),
+				'href' => rest_url( \sprintf( '/%s/%s/%d', $this->namespace, $this->rest_base, $store->get_id() ) ),
 			),
 			'collection' => array(
-				'href' => rest_url( sprintf( '/%s/%s', $this->namespace, $this->rest_base ) ),
+				'href' => rest_url( \sprintf( '/%s/%s', $this->namespace, $this->rest_base ) ),
 			),
 		);
-
-		return $links;
 	}
 }

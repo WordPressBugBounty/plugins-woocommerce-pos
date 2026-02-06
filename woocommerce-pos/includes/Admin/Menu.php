@@ -81,7 +81,7 @@ class Menu {
 	 * Render the upgrade page.
 	 */
 	public function display_upgrade_page(): void {
-		include_once 'templates/upgrade.php';
+		include_once 'views/upgrade.php';
 	}
 
 	/**
@@ -144,6 +144,9 @@ class Menu {
 			PLUGIN_NAME . '-settings',
 			array( '\WCPOS\WooCommercePOS\Admin\Settings', 'display_settings_page' )
 		);
+
+		// Note: Templates submenu is automatically added by the custom post type registration
+		// with 'show_in_menu' => PLUGIN_NAME
 
 		// adjust submenu
 		global $submenu;
