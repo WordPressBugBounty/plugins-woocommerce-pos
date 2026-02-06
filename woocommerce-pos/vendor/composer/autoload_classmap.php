@@ -222,7 +222,6 @@ return array(
     'WCPOS\\WooCommercePOS\\Pro' => $baseDir . '/includes/Pro.php',
     'WCPOS\\WooCommercePOS\\Products' => $baseDir . '/includes/Products.php',
     'WCPOS\\WooCommercePOS\\Registry' => $baseDir . '/includes/Registry.php',
-    'WCPOS\\WooCommercePOS\\Server' => $baseDir . '/includes/Server.php',
     'WCPOS\\WooCommercePOS\\Services\\Auth' => $baseDir . '/includes/Services/Auth.php',
     'WCPOS\\WooCommercePOS\\Services\\Cache' => $baseDir . '/includes/Services/Cache.php',
     'WCPOS\\WooCommercePOS\\Services\\Cashier' => $baseDir . '/includes/Services/Cashier.php',

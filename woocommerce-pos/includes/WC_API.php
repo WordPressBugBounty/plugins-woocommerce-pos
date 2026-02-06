@@ -10,11 +10,11 @@
 
 namespace WCPOS\WooCommercePOS;
 
-use WP_Query;
 use WCPOS\WooCommercePOS\Services\Settings;
+use WP_Query;
 
 /**
- *
+ * WC_API class.
  */
 class WC_API {
 	/**
@@ -32,7 +32,7 @@ class WC_API {
 	private $is_woocommerce_rest_api_variations_request = false;
 
 	/**
-	 *
+	 * Constructor.
 	 */
 	public function __construct() {
 		$pos_only_products = woocommerce_pos_get_settings( 'general', 'pos_only_products' );
@@ -44,15 +44,19 @@ class WC_API {
 	}
 
 	/**
+	 * Set WooCommerce REST API request flags.
 	 *
+	 * @param mixed            $result  The dispatch result.
+	 * @param \WP_REST_Server  $server  The server instance.
+	 * @param \WP_REST_Request $request The request object.
 	 */
 	public function set_woocommerce_rest_api_request_flags( $result, $server, $request ) {
 		$route = $request->get_route();
 
-		if ( strpos( $route, '/wc/v3/products' ) === 0 || strpos( $route, '/wc/v2/products' ) === 0 || strpos( $route, '/wc/v1/products' ) === 0 ) {
+		if ( 0 === strpos( $route, '/wc/v3/products' ) || 0 === strpos( $route, '/wc/v2/products' ) || 0 === strpos( $route, '/wc/v1/products' ) ) {
 			$this->is_woocommerce_rest_api_products_request = true;
 
-			if ( strpos( $route, '/variations' ) !== false ) {
+			if ( false !== strpos( $route, '/variations' ) ) {
 				$this->is_woocommerce_rest_api_variations_request = true;
 			}
 		}
@@ -73,23 +77,22 @@ class WC_API {
 		$settings_instance = Settings::instance();
 
 		// Hide POS only variations from the API response.
-		if ( ! $this->is_woocommerce_rest_api_variations_request ) {
+		if ( $this->is_woocommerce_rest_api_variations_request ) {
 			$settings = $settings_instance->get_pos_only_variations_visibility_settings();
 
 			if ( isset( $settings['ids'] ) && ! empty( $settings['ids'] ) ) {
 				$exclude_ids = array_map( 'intval', (array) $settings['ids'] );
-				$ids_format = implode( ',', array_fill( 0, count( $exclude_ids ), '%d' ) );
-				$where .= $wpdb->prepare( " AND {$wpdb->posts}.ID NOT IN ($ids_format)", $exclude_ids );
+				$ids_format  = implode( ',', array_fill( 0, \count( $exclude_ids ), '%d' ) );
+				$where      .= $wpdb->prepare( " AND {$wpdb->posts}.ID NOT IN ($ids_format)", $exclude_ids ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name and format are safe.
 			}
-
-			// Hide POS only products from the API response.
 		} elseif ( $this->is_woocommerce_rest_api_products_request ) {
+			// Hide POS only products from the API response.
 			$settings = $settings_instance->get_pos_only_product_visibility_settings();
 
 			if ( isset( $settings['ids'] ) && ! empty( $settings['ids'] ) ) {
 				$exclude_ids = array_map( 'intval', (array) $settings['ids'] );
-				$ids_format = implode( ',', array_fill( 0, count( $exclude_ids ), '%d' ) );
-				$where .= $wpdb->prepare( " AND {$wpdb->posts}.ID NOT IN ($ids_format)", $exclude_ids );
+				$ids_format  = implode( ',', array_fill( 0, \count( $exclude_ids ), '%d' ) );
+				$where      .= $wpdb->prepare( " AND {$wpdb->posts}.ID NOT IN ($ids_format)", $exclude_ids ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name and format are safe.
 			}
 		}
 

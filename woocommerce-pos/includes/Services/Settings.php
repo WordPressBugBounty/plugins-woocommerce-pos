@@ -1,10 +1,15 @@
 <?php
+/**
+ * Settings.
+ *
+ * @package WCPOS\WooCommercePOS
+ */
 
 namespace WCPOS\WooCommercePOS\Services;
 
 use WC_Payment_Gateways;
-use const WCPOS\WooCommercePOS\VERSION;
 use WP_Error;
+use const WCPOS\WooCommercePOS\VERSION;
 
 /**
  * Settings Service class.
@@ -18,6 +23,8 @@ class Settings {
 	protected static $db_prefix = 'woocommerce_pos_settings_';
 
 	/**
+	 * Default settings for all sections.
+	 *
 	 * @var array
 	 */
 	protected static $default_settings = array(
@@ -34,7 +41,7 @@ class Settings {
 			'order_status'    => 'wc-completed',
 			'admin_emails'    => true,
 			'customer_emails' => true,
-			// this is used in the POS, not in WP Admin (at the moment)
+			// this is used in the POS, not in WP Admin (at the moment).
 			'dequeue_script_handles' => array(
 				'admin-bar',
 				'wc-add-to-cart',
@@ -99,34 +106,44 @@ class Settings {
 	private static $instance = null;
 
 	/**
-	 * @var array
+	 * Get capabilities grouped by type.
+	 *
+	 * WooCommerce 9.9 replaced promote_users with create_customers for
+	 * customer creation via the REST API. We show the correct capability
+	 * on the Access settings page based on the installed WC version.
+	 *
+	 * @return array
 	 */
-	private static $caps = array(
-		'wcpos' => array(
-			'access_woocommerce_pos',  // pos frontend
-			'manage_woocommerce_pos', // pos admin
-		),
-		'wc' => array(
-			// 'create_customers', // coming in WooCommerce 9.0?
-			'read_private_products',
-			'edit_product',
-			'edit_others_products',
-			'edit_published_products',
-			'read_private_shop_orders',
-			'publish_shop_orders',
-			// 'promote_users', // for some reason Shop Manager needs this to create customers?
-			'edit_shop_orders',
-			'edit_others_shop_orders',
-			'create_users',
-			'edit_users',
-			'list_users',
-			'manage_product_terms',
-			'read_private_shop_coupons',
-		),
-		'wp' => array(
-			'read', // wp-admin access
-		),
-	);
+	private static function get_caps(): array {
+		$customer_create_cap = version_compare( WC()->version, '9.9', '>=' )
+			? 'create_customers'
+			: 'promote_users';
+
+		return array(
+			'wcpos' => array(
+				'access_woocommerce_pos',
+				'manage_woocommerce_pos',
+			),
+			'wc' => array(
+				$customer_create_cap,
+				'read_private_products',
+				'edit_product',
+				'edit_others_products',
+				'edit_published_products',
+				'read_private_shop_orders',
+				'publish_shop_orders',
+				'edit_shop_orders',
+				'edit_others_shop_orders',
+				'edit_users',
+				'list_users',
+				'manage_product_terms',
+				'read_private_shop_coupons',
+			),
+			'wp' => array(
+				'read',
+			),
+		);
+	}
 
 	/**
 	 * Constructor is private to prevent direct instantiation.
@@ -150,8 +167,10 @@ class Settings {
 	}
 
 	/**
-	 * @param string     $id
-	 * @param null|mixed $key
+	 * Get settings for a specific section.
+	 *
+	 * @param string     $id  The settings section ID.
+	 * @param null|mixed $key The specific setting key.
 	 *
 	 * @return null|array|mixed|WP_Error
 	 */
@@ -169,7 +188,7 @@ class Settings {
 			if ( ! isset( $settings[ $key ] ) ) {
 				return new WP_Error(
 					'woocommerce_pos_settings_error',
-					// translators: 1. %s: Settings group id, 2. %s: Settings key
+					// translators: 1. %s: Settings group id, 2. %s: Settings key.
 					\sprintf( __( 'Settings with id %1$s and key %2$s not found', 'woocommerce-pos' ), $id, $key ),
 					array( 'status' => 400 )
 				);
@@ -180,7 +199,7 @@ class Settings {
 
 		return new WP_Error(
 			'woocommerce_pos_settings_error',
-			// translators: %s: Settings group id, ie: 'general' or 'checkout'
+			// translators: %s: Settings group id, ie: 'general' or 'checkout'.
 			\sprintf( __( 'Settings with id %s not found', 'woocommerce-pos' ), $id ),
 			array( 'status' => 400 )
 		);
@@ -234,20 +253,22 @@ class Settings {
 
 		return new WP_Error(
 			'woocommerce_pos_settings_error',
-			// translators: %s: Settings group id, ie: 'general' or 'checkout'
+			// translators: %s: Settings group id, ie: 'general' or 'checkout'.
 			\sprintf( __( 'Can not save settings with id %s', 'woocommerce-pos' ), $id ),
 			array( 'status' => 400 )
 		);
 	}
 
 	/**
+	 * Get general settings.
+	 *
 	 * @return array
 	 */
 	public function get_general_settings(): array {
 		$default_settings = self::$default_settings['general'];
 		$settings         = get_option( self::$db_prefix . 'general', array() );
 
-		// if the key does not exist in db settings, use the default settings
+		// if the key does not exist in db settings, use the default settings.
 		foreach ( $default_settings as $key => $value ) {
 			if ( ! \array_key_exists( $key, $settings ) ) {
 				$settings[ $key ] = $value;
@@ -269,13 +290,15 @@ class Settings {
 	}
 
 	/**
+	 * Get checkout settings.
+	 *
 	 * @return array
 	 */
 	public function get_checkout_settings(): array {
 		$default_settings = self::$default_settings['checkout'];
 		$settings         = get_option( self::$db_prefix . 'checkout', array() );
 
-		// if the key does not exist in db settings, use the default settings
+		// if the key does not exist in db settings, use the default settings.
 		foreach ( $default_settings as $key => $value ) {
 			if ( ! \array_key_exists( $key, $settings ) ) {
 				$settings[ $key ] = $value;
@@ -293,10 +316,15 @@ class Settings {
 		return apply_filters( 'woocommerce_pos_checkout_settings', $settings );
 	}
 
-
+	/**
+	 * Get access settings with role capabilities.
+	 *
+	 * @return array
+	 */
 	public function get_access_settings(): array {
 		global $wp_roles;
 		$role_caps = array();
+		$caps      = self::get_caps();
 
 		$roles = $wp_roles->roles;
 		if ( $roles ) {
@@ -305,16 +333,16 @@ class Settings {
 					'name'         => $role['name'],
 					'capabilities' => array(
 						'wcpos' => array_intersect_key(
-							array_merge( array_fill_keys( self::$caps['wcpos'], false ), $role['capabilities'] ),
-							array_flip( self::$caps['wcpos'] )
+							array_merge( array_fill_keys( $caps['wcpos'], false ), $role['capabilities'] ),
+							array_flip( $caps['wcpos'] )
 						),
 						'wc' => array_intersect_key(
-							array_merge( array_fill_keys( self::$caps['wc'], false ), $role['capabilities'] ),
-							array_flip( self::$caps['wc'] )
+							array_merge( array_fill_keys( $caps['wc'], false ), $role['capabilities'] ),
+							array_flip( $caps['wc'] )
 						),
 						'wp' => array_intersect_key(
-							array_merge( array_fill_keys( self::$caps['wp'], false ), $role['capabilities'] ),
-							array_flip( self::$caps['wp'] )
+							array_merge( array_fill_keys( $caps['wp'], false ), $role['capabilities'] ),
+							array_flip( $caps['wp'] )
 						),
 					),
 				);
@@ -333,13 +361,15 @@ class Settings {
 	}
 
 	/**
+	 * Get tools settings.
+	 *
 	 * @return array
 	 */
 	public function get_tools_settings(): array {
 		$default_settings = self::$default_settings['tools'];
 		$settings         = get_option( self::$db_prefix . 'tools', array() );
 
-		// if the key does not exist in db settings, use the default settings
+		// if the key does not exist in db settings, use the default settings.
 		foreach ( $default_settings as $key => $value ) {
 			if ( ! \array_key_exists( $key, $settings ) ) {
 				$settings[ $key ] = $value;
@@ -357,7 +387,11 @@ class Settings {
 		return apply_filters( 'woocommerce_pos_tools_settings', $settings );
 	}
 
-
+	/**
+	 * Get license settings.
+	 *
+	 * @return array
+	 */
 	public function get_license_settings() {
 		/*
 		 * Filters the license settings.
@@ -371,15 +405,17 @@ class Settings {
 	}
 
 	/**
+	 * Get available barcode fields.
+	 *
 	 * @return array
 	 */
 	public function get_barcodes(): array {
 		global $wpdb;
 
-		// maybe add custom barcode field
+		// maybe add custom barcode field.
 		$custom_field = $this->get_settings( 'general', 'barcode_field' );
 
-		// Prepare the basic query
+		// Prepare the basic query.
 		$result = $wpdb->get_col(
 			"
 			SELECT DISTINCT(pm.meta_key)
@@ -401,6 +437,8 @@ class Settings {
 	}
 
 	/**
+	 * Get available order statuses.
+	 *
 	 * @return array
 	 */
 	public function get_order_statuses(): array {
@@ -409,7 +447,11 @@ class Settings {
 		return array_map( 'wc_get_order_status_name', $order_statuses );
 	}
 
-
+	/**
+	 * Get payment gateways settings.
+	 *
+	 * @return array
+	 */
 	public function get_payment_gateways_settings() {
 		// Note: I need to re-init the gateways here to pass the tests, but it seems to work fine in the app.
 		WC_Payment_Gateways::instance()->init();
@@ -419,15 +461,15 @@ class Settings {
 			get_option( self::$db_prefix . 'payment_gateways', array() )
 		);
 
-		// NOTE - gateways can be installed and uninstalled, so we need to assume the settings data is stale
+		// NOTE - gateways can be installed and uninstalled, so we need to assume the settings data is stale.
 		$response = array(
 			'default_gateway' => $gateways_settings['default_gateway'],
 			'gateways'        => array(),
 		);
 
-		// loop through installed gateways and merge with saved settings
+		// loop through installed gateways and merge with saved settings.
 		foreach ( $installed_gateways as $id => $gateway ) {
-			// sanity check for gateway class
+			// sanity check for gateway class.
 			if ( ! is_a( $gateway, 'WC_Payment_Gateway' ) || 'pre_install_woocommerce_payments_promotion' === $id ) {
 				continue;
 			}
@@ -461,7 +503,7 @@ class Settings {
 		$default_settings = self::$default_settings['visibility'];
 		$settings         = get_option( self::$db_prefix . 'visibility', array() );
 
-		// if the key does not exist in db settings, use the default settings
+		// if the key does not exist in db settings, use the default settings.
 		foreach ( $default_settings as $key => $value ) {
 			if ( ! \array_key_exists( $key, $settings ) ) {
 				$settings[ $key ] = $value;
@@ -509,8 +551,8 @@ class Settings {
 		}
 
 		$post_type  = $args['post_type'];
-		$scope      = $args['scope']      ?? 'default';
-		$visibility = $args['visibility'] ?? '';
+		$scope      = $args['scope'] ?? 'default';
+		$visibility = $args['visibility'];
 		$ids        = \is_array( $args['ids'] ) ? $args['ids'] : array( $args['ids'] );
 		$ids        = array_filter( array_map( 'intval', $ids ) ); // Force to array of integers.
 
@@ -678,7 +720,7 @@ class Settings {
 	/**
 	 * Check if a product is POS only.
 	 *
-	 * @param int|string $product_id
+	 * @param int|string $product_id The product ID.
 	 *
 	 * @return bool
 	 */
@@ -693,7 +735,7 @@ class Settings {
 	/**
 	 * Check if a product is Online only.
 	 *
-	 * @param int|string $product_id
+	 * @param int|string $product_id The product ID.
 	 *
 	 * @return bool
 	 */
@@ -708,7 +750,7 @@ class Settings {
 	/**
 	 * Check if a variation is POS only.
 	 *
-	 * @param int|string $variation_id
+	 * @param int|string $variation_id The variation ID.
 	 *
 	 * @return bool
 	 */
@@ -723,7 +765,7 @@ class Settings {
 	/**
 	 * Check if a variation is Online only.
 	 *
-	 * @param int|string $variation_id
+	 * @param int|string $variation_id The variation ID.
 	 *
 	 * @return bool
 	 */
@@ -739,7 +781,7 @@ class Settings {
 	/**
 	 * Delete settings in WP options table.
 	 *
-	 * @param $id
+	 * @param string $id The settings section ID.
 	 *
 	 * @return bool|WP_Error
 	 */
@@ -769,6 +811,8 @@ class Settings {
 	}
 
 	/**
+	 * Get the database version.
+	 *
 	 * @return string
 	 */
 	public static function get_db_version() {
@@ -776,7 +820,7 @@ class Settings {
 	}
 
 	/**
-	 * updates db to new version number
+	 * Updates db to new version number
 	 * bumps the idb version number.
 	 */
 	public static function bump_versions(): void {

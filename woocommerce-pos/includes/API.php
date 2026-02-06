@@ -5,6 +5,7 @@
  * @author   Paul Kilmurray <paul@kilbot.com>
  *
  * @see     http://wcpos.com
+ * @package WCPOS\WooCommercePOS
  */
 
 namespace WCPOS\WooCommercePOS;
@@ -16,6 +17,9 @@ use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
 
+/**
+ * API class.
+ */
 class API {
 	/**
 	 * WCPOS REST API namespaces and endpoints.
@@ -25,17 +29,27 @@ class API {
 	protected $controllers = array();
 
 	/**
+	 * Map of route patterns to controller keys.
+	 * Built during register_routes() for use in rest_dispatch_request().
+	 *
+	 * @var array<string, string>
+	 */
+	protected $route_map = array();
+
+	/**
 	 * Flag to check if authentication has been checked.
 	 *
 	 * @var bool
 	 */
 	protected $is_auth_checked = false;
 
-
+	/**
+	 * Constructor.
+	 */
 	public function __construct() {
 		$this->register_routes();
 
-		// Allows requests from WCPOS Desktop and Mobile Apps
+		// Allows requests from WCPOS Desktop and Mobile Apps.
 		add_filter( 'rest_allowed_cors_headers', array( $this, 'rest_allowed_cors_headers' ), 10, 1 );
 		add_filter( 'rest_pre_serve_request', array( $this, 'rest_pre_serve_request' ), 10, 4 );
 
@@ -46,10 +60,10 @@ class API {
 		add_filter( 'determine_current_user', array( $this, 'determine_current_user' ), 20 );
 		add_filter( 'rest_authentication_errors', array( $this, 'rest_authentication_errors' ), 50, 1 );
 
-		// Adds info about the WordPress install
+		// Adds info about the WordPress install.
 		add_filter( 'rest_index', array( $this, 'rest_index' ), 10, 1 );
 
-		// These filters allow changes to the WC REST API response
+		// These filters allow changes to the WC REST API response.
 		add_filter( 'rest_dispatch_request', array( $this, 'rest_dispatch_request' ), 10, 4 );
 		add_filter( 'rest_pre_dispatch', array( $this, 'rest_pre_dispatch' ), 10, 3 );
 	}
@@ -115,6 +129,39 @@ class API {
 				$this->controllers[ $key ]->register_routes();
 			}
 		}
+
+		// Build route map for use in rest_dispatch_request().
+		$rest_server = rest_get_server();
+		$all_routes  = $rest_server->get_routes( 'wcpos/v1' );
+
+		foreach ( $all_routes as $route_pattern => $route_handlers ) {
+			foreach ( $route_handlers as $route_handler ) {
+				$callback = $route_handler['callback'] ?? null;
+
+				// Extract the controller object from the callback.
+				$controller_obj = null;
+				if ( \is_array( $callback ) && isset( $callback[0] ) && \is_object( $callback[0] ) ) {
+					$controller_obj = $callback[0];
+				} elseif ( $callback instanceof \Closure ) {
+					// WC 10.5+ RestApiCache wraps callbacks in closures.
+					// Use reflection to extract the bound $this.
+					$ref            = new \ReflectionFunction( $callback );
+					$controller_obj = $ref->getClosureThis();
+				}
+
+				if ( ! $controller_obj ) {
+					continue;
+				}
+
+				// Find which controller key this object belongs to.
+				foreach ( $this->controllers as $key => $registered_controller ) {
+					if ( $controller_obj === $registered_controller ) {
+						$this->route_map[ $route_pattern ] = $key;
+						break;
+					}
+				}
+			}
+		}
 	}
 
 	/**
@@ -155,7 +202,7 @@ class API {
 	 *
 	 * @param false|int $user_id User ID if one has been determined, false otherwise.
 	 *
-	 * @return false|int|void
+	 * @return false|int|\WP_Error
 	 */
 	public function determine_current_user( $user_id ) {
 		$this->is_auth_checked = true;
@@ -172,19 +219,19 @@ class API {
 	 *
 	 * We need to make sure our
 	 *
-	 * @param mixed $errors
+	 * @param mixed $errors Authentication errors.
 	 */
 	public function rest_authentication_errors( $errors ) {
-		// Pass through other errors
-		if ( ! empty( $error ) ) {
-			return $error;
+		// Pass through other errors.
+		if ( ! empty( $errors ) ) {
+			return $errors;
 		}
 
-		// check if determine_current_user has been called
+		// check if determine_current_user has been called.
 		if ( ! $this->is_auth_checked ) {
 			// Authentication hasn't occurred during `determine_current_user`, so check auth.
 			$user_id = $this->authenticate( false );
-			if ( $user_id ) {
+			if ( $user_id && ! is_wp_error( $user_id ) ) {
 				wp_set_current_user( $user_id );
 
 				return true;
@@ -200,22 +247,23 @@ class API {
 	 * @return false|string
 	 */
 	public function get_auth_header() {
-		// Check if HTTP_AUTHORIZATION is set in $_SERVER
-		if ( isset( $_SERVER['HTTP_AUTHORIZATION'] ) ) {
-			return sanitize_text_field( $_SERVER['HTTP_AUTHORIZATION'] );
+		// Check if HTTP_AUTHORIZATION is set and not empty
+		// (htaccess SetEnvIf can set an empty value when no header is present).
+		if ( ! empty( $_SERVER['HTTP_AUTHORIZATION'] ) ) {
+			return sanitize_text_field( wp_unslash( $_SERVER['HTTP_AUTHORIZATION'] ) );
 		}
 
-		// Check for alternative header in $_SERVER
-		if ( isset( $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ) ) {
-			return sanitize_text_field( $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] );
+		// Check for alternative header in $_SERVER.
+		if ( ! empty( $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ) ) {
+			return sanitize_text_field( wp_unslash( $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ) );
 		}
 
-		// Check for authorization param in URL ($_GET)
-		if ( isset( $_GET['authorization'] ) ) {
-			return sanitize_text_field( $_GET['authorization'] );
+		// Check for authorization param in URL ($_GET).
+		if ( ! empty( $_GET['authorization'] ) ) {
+			return sanitize_text_field( wp_unslash( $_GET['authorization'] ) );
 		}
 
-		// Return false if none of the variables are set
+		// Return false if none of the variables are set.
 		return false;
 	}
 
@@ -275,9 +323,26 @@ class API {
 	 * @return mixed
 	 */
 	public function rest_pre_dispatch( $result, $server, $request ) {
+		if ( strpos( $request->get_route(), '/wcpos/v1/' ) !== 0 ) {
+			return $result;
+		}
+
+		// Baseline permission gate: all POS endpoints require access_woocommerce_pos.
+		// Exempt: auth/test and auth/refresh which must be public.
+		$route = $request->get_route();
+		if ( '/wcpos/v1/auth/test' !== $route && '/wcpos/v1/auth/refresh' !== $route ) {
+			if ( ! current_user_can( 'access_woocommerce_pos' ) ) {
+				return new \WP_Error(
+					'woocommerce_pos_rest_forbidden',
+					__( 'You do not have permission to access the POS.', 'woocommerce-pos' ),
+					array( 'status' => 403 )
+				);
+			}
+		}
+
 		$max_length = 10000;
 
-		// Process 'include' parameter
+		// Process 'include' parameter.
 		$include = $request->get_param( 'include' );
 		if ( $include ) {
 			$processed_include = $this->shorten_param_array( $include, $max_length );
@@ -285,7 +350,7 @@ class API {
 			unset( $request['include'] );
 		}
 
-		// Process 'exclude' parameter
+		// Process 'exclude' parameter.
 		$exclude = $request->get_param( 'exclude' );
 		if ( $exclude ) {
 			$processed_exclude = $this->shorten_param_array( $exclude, $max_length );
@@ -307,37 +372,33 @@ class API {
 	 * @return mixed
 	 */
 	public function rest_dispatch_request( $dispatch_result, $request, $route, $handler ) {
-		if ( isset( $handler['callback'] ) && \is_array( $handler['callback'] ) && isset( $handler['callback'][0] ) ) {
-			$controller = $handler['callback'][0];
+		// Only process wcpos/v1 routes.
+		if ( ! isset( $this->route_map[ $route ] ) ) {
+			return $dispatch_result;
+		}
 
-			// Check if the controller object is one of our registered controllers.
-			foreach ( $this->controllers as $key => $wcpos_controller ) {
-				if ( $controller === $wcpos_controller ) {
-					/*
-					 * I'm adding some additional PHP settings before the response. Placing them here so they only apply to the POS API.
-					 *
-					 * - error_reporting(0) - Turn off error reporting
-					 * - ini_set('display_errors', 0) - Turn off error display
-					 * - ini_set('precision', 10) - Set the precision of floating point numbers
-					 * - ini_set('serialize_precision', 10) - Set the precision of floating point numbers for serialization
-					 *
-					 * This is to prevent any PHP errors from being displayed in the response.
-					 *
-					 * The precision settings are to prevent floating point weirdness, eg: stock_quantity 3.6 becomes 3.6000000000000001
-					 */
-					error_reporting( 0 );
-					@ini_set( 'display_errors', 0 );
-					@ini_set( 'precision', 10 );
-					@ini_set( 'serialize_precision', 10 );
+		/*
+		 * POS-specific PHP settings to prevent errors in JSON and float weirdness.
+		 *
+		 * - error_reporting(0) - Turn off error reporting
+		 * - ini_set('display_errors', 0) - Turn off error display
+		 * - ini_set('precision', 10) - Set the precision of floating point numbers
+		 * - ini_set('serialize_precision', 10) - Set the precision of floating point numbers for serialization
+		 *
+		 * This is to prevent any PHP errors from being displayed in the response.
+		 *
+		 * The precision settings are to prevent floating point weirdness, eg: stock_quantity 3.6 becomes 3.6000000000000001
+		 */
+		error_reporting( 0 );
+		@ini_set( 'display_errors', '0' ); // phpcs:ignore WordPress.PHP.IniSet.display_errors_Disallowed -- intentionally disabling error display for POS API responses.
+		@ini_set( 'precision', '10' );
+		@ini_set( 'serialize_precision', '10' );
 
-					// Check if the controller has a 'wcpos_dispatch_request' method.
-					if ( method_exists( $controller, 'wcpos_dispatch_request' ) ) {
-						return $controller->wcpos_dispatch_request( $dispatch_result, $request, $route, $handler );
-					}
+		$key        = $this->route_map[ $route ];
+		$controller = $this->controllers[ $key ] ?? null;
 
-					break;
-				}
-			}
+		if ( $controller && method_exists( $controller, 'wcpos_dispatch_request' ) ) {
+			return $controller->wcpos_dispatch_request( $dispatch_result, $request, $route, $handler );
 		}
 
 		return $dispatch_result;
@@ -352,8 +413,8 @@ class API {
 	 *
 	 * @TODO - For long queries, I should find a better solution than this.
 	 *
-	 * @param array|string $param_value
-	 * @param int          $max_length
+	 * @param array|string $param_value The parameter value.
+	 * @param int          $max_length  The maximum length.
 	 *
 	 * @return array
 	 */
@@ -362,7 +423,7 @@ class API {
 		$param_string = implode( ',', $param_array );
 
 		if ( \strlen( $param_string ) > $max_length ) {
-			shuffle( $param_array ); // Shuffle to randomize
+			shuffle( $param_array ); // Shuffle to randomize.
 
 			$new_param_string   = '';
 			$random_param_array = array();
@@ -372,7 +433,7 @@ class API {
 					$new_param_string .= $id . ',';
 					$random_param_array[] = $id;
 				} else {
-					break; // Stop when maximum length is reached
+					break; // Stop when maximum length is reached.
 				}
 			}
 
@@ -387,28 +448,28 @@ class API {
 	 *
 	 * @param false|int $user_id User ID if one has been determined, false otherwise.
 	 *
-	 * @return int|WP_Error
+	 * @return false|int|\WP_Error
 	 */
 	private function authenticate( $user_id ) {
-		// check if there is an auth header
+		// check if there is an auth header.
 		$auth_header = $this->get_auth_header();
 		if ( ! \is_string( $auth_header ) ) {
 			return $user_id;
 		}
 
-		// Extract Bearer token from Authorization Header
+		// Extract Bearer token from Authorization Header.
 		list($token) = sscanf( $auth_header, 'Bearer %s' );
 
 		if ( $token ) {
 			$auth_service  = Auth::instance();
 			$decoded_token = $auth_service->validate_token( $token );
 
-			// Check if validate_token returned WP_Error and user_id is null
-			if ( is_wp_error( $decoded_token ) && null === $user_id ) {
+			// Check if validate_token returned WP_Error and user_id is null.
+			if ( is_wp_error( $decoded_token ) && false === $user_id ) {
 				return $decoded_token;
 			}
 
-			// If the token is valid, set the user_id
+			// If the token is valid, set the user_id.
 			if ( ! is_wp_error( $decoded_token ) ) {
 				$user_id = $decoded_token->data->user->id;
 
