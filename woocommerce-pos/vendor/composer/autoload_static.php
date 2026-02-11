@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInit11fefb99bd04301e0641d7ff85564d12
+class ComposerStaticInitaeef2cc8560cf07b387a66c717b530fe
 {
     public static $files = array (
         '23c18046f52bef3eea034657bafda50f' => __DIR__ . '/..' . '/symfony/polyfill-php81/bootstrap.php',
@@ -244,6 +244,8 @@ class ComposerStaticInit11fefb99bd04301e0641d7ff85564d12
         'WCPOS\\WooCommercePOS\\API\\Cashier' => __DIR__ . '/../..' . '/includes/API/Cashier.php',
         'WCPOS\\WooCommercePOS\\API\\Customers_Controller' => __DIR__ . '/../..' . '/includes/API/Customers_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\Data_Order_Statuses_Controller' => __DIR__ . '/../..' . '/includes/API/Data_Order_Statuses_Controller.php',
+        'WCPOS\\WooCommercePOS\\API\\Extensions' => __DIR__ . '/../..' . '/includes/API/Extensions.php',
+        'WCPOS\\WooCommercePOS\\API\\Logs' => __DIR__ . '/../..' . '/includes/API/Logs.php',
         'WCPOS\\WooCommercePOS\\API\\Orders_Controller' => __DIR__ . '/../..' . '/includes/API/Orders_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\Payment_Gateways' => __DIR__ . '/../..' . '/includes/API/Payment_Gateways.php',
         'WCPOS\\WooCommercePOS\\API\\Product_Brands_Controller' => __DIR__ . '/../..' . '/includes/API/Product_Brands_Controller.php',
@@ -296,6 +298,7 @@ class ComposerStaticInit11fefb99bd04301e0641d7ff85564d12
         'WCPOS\\WooCommercePOS\\Services\\Auth' => __DIR__ . '/../..' . '/includes/Services/Auth.php',
         'WCPOS\\WooCommercePOS\\Services\\Cache' => __DIR__ . '/../..' . '/includes/Services/Cache.php',
         'WCPOS\\WooCommercePOS\\Services\\Cashier' => __DIR__ . '/../..' . '/includes/Services/Cashier.php',
+        'WCPOS\\WooCommercePOS\\Services\\Extensions' => __DIR__ . '/../..' . '/includes/Services/Extensions.php',
         'WCPOS\\WooCommercePOS\\Services\\Settings' => __DIR__ . '/../..' . '/includes/Services/Settings.php',
         'WCPOS\\WooCommercePOS\\Template_Router' => __DIR__ . '/../..' . '/includes/Template_Router.php',
         'WCPOS\\WooCommercePOS\\Templates' => __DIR__ . '/../..' . '/includes/Templates.php',
@@ -313,10 +316,10 @@ class ComposerStaticInit11fefb99bd04301e0641d7ff85564d12
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInit11fefb99bd04301e0641d7ff85564d12::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInit11fefb99bd04301e0641d7ff85564d12::$prefixDirsPsr4;
-            $loader->prefixesPsr0 = ComposerStaticInit11fefb99bd04301e0641d7ff85564d12::$prefixesPsr0;
-            $loader->classMap = ComposerStaticInit11fefb99bd04301e0641d7ff85564d12::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInitaeef2cc8560cf07b387a66c717b530fe::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInitaeef2cc8560cf07b387a66c717b530fe::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInitaeef2cc8560cf07b387a66c717b530fe::$prefixesPsr0;
+            $loader->classMap = ComposerStaticInitaeef2cc8560cf07b387a66c717b530fe::$classMap;
 
         }, null, ClassLoader::class);
     }

@@ -10,6 +10,8 @@
 
 namespace WCPOS\WooCommercePOS\Admin;
 
+use WCPOS\WooCommercePOS\API\Logs;
+use WCPOS\WooCommercePOS\Services\Extensions as ExtensionsService;
 use WCPOS\WooCommercePOS\Services\Settings as SettingsService;
 use const WCPOS\WooCommercePOS\PLUGIN_NAME;
 use const WCPOS\WooCommercePOS\PLUGIN_URL;
@@ -25,6 +27,7 @@ class Settings {
 	 */
 	public function __construct() {
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+		add_action( 'in_admin_header', array( $this, 'remove_admin_notices' ) );
 
 		/*
 		 * Initializes the settings for WCPOS in the admin panel.
@@ -56,6 +59,16 @@ class Settings {
 	}
 
 	/**
+	 * Remove all admin notices on our settings page.
+	 *
+	 * @return void
+	 */
+	public function remove_admin_notices(): void {
+		remove_all_actions( 'admin_notices' );
+		remove_all_actions( 'all_admin_notices' );
+	}
+
+	/**
 	 * Enqueue assets.
 	 *
 	 * Note: SCRIPT_DEBUG should be set in the wp-config.php file for debugging
@@ -69,9 +82,7 @@ class Settings {
 		wp_enqueue_style(
 			PLUGIN_NAME . '-settings-styles',
 			PLUGIN_URL . $dir . '/css/settings.css',
-			array(
-				'wp-components',
-			),
+			array(),
 			VERSION
 		);
 
@@ -81,10 +92,8 @@ class Settings {
 			array(
 				'react',
 				'react-dom',
-				'wp-components',
-				'wp-element',
-				'wp-i18n',
 				'wp-api-fetch',
+				'wp-url',
 				'lodash',
 			),
 			VERSION,
@@ -93,16 +102,6 @@ class Settings {
 
 		// Add inline script.
 		wp_add_inline_script( PLUGIN_NAME . '-settings', $this->inline_script(), 'before' );
-
-		if ( $is_development ) {
-			wp_enqueue_script(
-				'webpack-live-reload',
-				'http://localhost:35729/livereload.js',
-				array(),
-				null,
-				true
-			);
-		}
 	}
 
 	/**
@@ -114,15 +113,48 @@ class Settings {
 		$settings_service = SettingsService::instance();
 		$barcodes         = array_values( $settings_service->get_barcodes() );
 		$order_statuses   = $settings_service->get_order_statuses();
+		$new_ext_count    = $this->get_new_extensions_count();
+		$unread_logs      = Logs::get_unread_counts( get_current_user_id() );
 
 		return \sprintf(
 			'var wcpos = wcpos || {}; wcpos.settings = {
             barcodes: %s,
-            order_statuses: %s
+            order_statuses: %s,
+            newExtensionsCount: %s,
+            unreadLogCounts: %s
         }; wcpos.translationVersion = %s;',
 			json_encode( $barcodes ),
 			json_encode( $order_statuses ),
+			json_encode( $new_ext_count ),
+			json_encode( $unread_logs ),
 			json_encode( TRANSLATION_VERSION )
 		);
+	}
+
+	/**
+	 * Get the count of extensions the current user hasn't seen yet.
+	 *
+	 * Uses the cached catalog transient to avoid remote fetches on every page load.
+	 * Returns null if the catalog hasn't been fetched yet.
+	 *
+	 * @return int|null
+	 */
+	private function get_new_extensions_count(): ?int {
+		$cached = get_transient( ExtensionsService::TRANSIENT_KEY );
+
+		if ( false === $cached || ! \is_array( $cached ) ) {
+			return null;
+		}
+
+		$catalog_slugs = array_column( $cached, 'slug' );
+		$seen_slugs    = get_user_meta( get_current_user_id(), '_wcpos_seen_extension_slugs', true );
+
+		if ( ! \is_array( $seen_slugs ) ) {
+			$seen_slugs = array();
+		}
+
+		$new_slugs = array_diff( $catalog_slugs, $seen_slugs );
+
+		return \count( $new_slugs );
 	}
 }

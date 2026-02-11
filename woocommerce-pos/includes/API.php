@@ -107,6 +107,8 @@ class API {
 
 				// TODO: remove this?
 				'stores'                => API\Stores::class,
+				'extensions'            => API\Extensions::class,
+				'logs'                  => API\Logs::class,
 
 				// extend WC REST API controllers.
 				'products'              => API\Products_Controller::class,
