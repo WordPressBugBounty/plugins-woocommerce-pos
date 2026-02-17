@@ -228,6 +228,7 @@ return array(
     'WCPOS\\WooCommercePOS\\Services\\Cache' => $baseDir . '/includes/Services/Cache.php',
     'WCPOS\\WooCommercePOS\\Services\\Cashier' => $baseDir . '/includes/Services/Cashier.php',
     'WCPOS\\WooCommercePOS\\Services\\Extensions' => $baseDir . '/includes/Services/Extensions.php',
+    'WCPOS\\WooCommercePOS\\Services\\Meta_Data_Repair' => $baseDir . '/includes/Services/Meta_Data_Repair.php',
     'WCPOS\\WooCommercePOS\\Services\\Settings' => $baseDir . '/includes/Services/Settings.php',
     'WCPOS\\WooCommercePOS\\Template_Router' => $baseDir . '/includes/Template_Router.php',
     'WCPOS\\WooCommercePOS\\Templates' => $baseDir . '/includes/Templates.php',
