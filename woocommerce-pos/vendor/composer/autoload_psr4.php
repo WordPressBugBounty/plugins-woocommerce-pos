@@ -12,5 +12,6 @@ return array(
     'Symfony\\Polyfill\\Ctype\\' => array($vendorDir . '/symfony/polyfill-ctype'),
     'Ramsey\\Uuid\\' => array($vendorDir . '/ramsey/uuid/src'),
     'Ramsey\\Collection\\' => array($vendorDir . '/ramsey/collection/src'),
+    'Mustache\\' => array($vendorDir . '/mustache/mustache/src'),
     'Brick\\Math\\' => array($vendorDir . '/brick/math/src'),
 );

@@ -155,14 +155,30 @@ class List_Templates {
 		}
 
 		$virtual_templates = TemplatesManager::detect_filesystem_templates( 'receipt' );
+		$starter_templates = TemplatesManager::get_starter_templates();
 		$preview_order     = $this->get_last_pos_order();
-
-		if ( empty( $virtual_templates ) ) {
-			return $views;
-		}
 
 		?>
 		<style>
+			.wcpos-templates-intro {
+				margin: 15px 20px 0 0;
+				background: #fff;
+				border: 1px solid #c3c4c7;
+				padding: 20px 24px;
+			}
+			.wcpos-templates-intro h2 {
+				margin: 0 0 8px 0;
+				padding: 0;
+				font-size: 18px;
+				font-weight: 600;
+			}
+			.wcpos-templates-intro p {
+				margin: 0 0 12px 0;
+				color: #3c434a;
+				max-width: 720px;
+				line-height: 1.5;
+			}
+
 			.wcpos-virtual-templates-wrapper {
 				margin: 0;
 			}
@@ -203,6 +219,45 @@ class List_Templates {
 			.wcpos-virtual-templates .status-inactive {
 				color: #646970;
 			}
+
+			.wcpos-starter-templates {
+				margin: 15px 20px 15px 0;
+				background: #fff;
+				border: 1px solid #c3c4c7;
+				border-left: 4px solid #dba617;
+				padding: 15px 20px;
+			}
+			.wcpos-starter-templates h3 {
+				margin: 0 0 6px 0;
+				padding: 0;
+				font-size: 14px;
+			}
+			.wcpos-starter-templates > p {
+				margin: 0 0 15px 0;
+				color: #646970;
+			}
+			.wcpos-starter-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+				gap: 12px;
+			}
+			.wcpos-starter-card {
+				border: 1px solid #dcdcde;
+				border-radius: 4px;
+				padding: 14px 16px;
+				background: #f6f7f7;
+			}
+			.wcpos-starter-card h4 {
+				margin: 0 0 6px 0;
+				font-size: 13px;
+			}
+			.wcpos-starter-card p {
+				margin: 0 0 10px 0;
+				font-size: 12px;
+				color: #646970;
+				line-height: 1.4;
+			}
+
 			.wcpos-custom-templates-header {
 				margin: 20px 20px 10px 0;
 			}
@@ -282,20 +337,77 @@ class List_Templates {
 				background: #f6f7f7;
 				border-radius: 0 0 4px 4px;
 			}
+			.wcpos-badge-offline {
+				display: inline-block;
+				background: #dcedc8;
+				color: #33691e;
+				font-size: 11px;
+				font-weight: 600;
+				padding: 2px 8px;
+				border-radius: 3px;
+				margin-left: 6px;
+				vertical-align: middle;
+			}
 		</style>
 
+		<div class="wcpos-templates-intro">
+			<h2><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Receipt Templates', 'woocommerce-pos' ); ?></h2>
+			<p>
+				<?php esc_html_e( 'Customise your POS receipts with PHP or logicless templates.', 'woocommerce-pos' ); ?>
+				<?php
+				$docs_url = 'https://docs.wcpos.com/templates/';
+				/* translators: %s: URL to template documentation */
+				$docs_text = __( '<a href="%s" target="_blank" rel="noopener noreferrer">Read the documentation</a> for a complete reference and examples.', 'woocommerce-pos' );
+				echo wp_kses(
+					sprintf( $docs_text, esc_url( $docs_url ) ),
+					array(
+						'a' => array(
+							'href'   => array(),
+							'target' => array(),
+							'rel'    => array(),
+						),
+					)
+				);
+				?>
+			</p>
+		</div>
+
 		<div class="wcpos-virtual-templates-wrapper">
+			<?php if ( ! empty( $starter_templates ) ) : ?>
+			<div class="wcpos-starter-templates">
+				<h3><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Starter Templates', 'woocommerce-pos' ); ?></h3>
+				<p><?php esc_html_e( 'Ready-made examples that demonstrate different receipt styles. Install one to get a working template you can customise.', 'woocommerce-pos' ); ?></p>
+				<div class="wcpos-starter-grid">
+					<?php foreach ( $starter_templates as $key => $starter ) : ?>
+						<div class="wcpos-starter-card">
+							<h4>
+								<?php echo esc_html( $starter['title'] ); ?>
+								<?php if ( 'logicless' === ( $starter['engine'] ?? '' ) ) : ?>
+									<span class="wcpos-badge-offline"><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Offline', 'woocommerce-pos' ); ?></span>
+								<?php endif; ?>
+							</h4>
+							<p><?php echo esc_html( $starter['description'] ); ?></p>
+							<a href="<?php echo esc_url( $this->get_install_starter_url( $key ) ); ?>" class="button button-small button-primary">
+								<?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Install', 'woocommerce-pos' ); ?>
+							</a>
+						</div>
+					<?php endforeach; ?>
+				</div>
+			</div>
+			<?php endif; ?>
+
+			<?php if ( ! empty( $virtual_templates ) ) : ?>
 			<div class="wcpos-virtual-templates">
-				<h3><?php esc_html_e( 'Default Templates', 'woocommerce-pos' ); ?></h3>
+				<h3><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Default Templates', 'woocommerce-pos' ); ?></h3>
 				<p><?php esc_html_e( 'These templates are automatically detected from your plugin and theme files. They cannot be deleted.', 'woocommerce-pos' ); ?></p>
 				<table class="wp-list-table widefat fixed striped">
 					<thead>
 						<tr>
-							<th style="width: 35%;"><?php esc_html_e( 'Template', 'woocommerce-pos' ); ?></th>
-							<th style="width: 15%;"><?php esc_html_e( 'Type', 'woocommerce-pos' ); ?></th>
-							<th style="width: 15%;"><?php esc_html_e( 'Source', 'woocommerce-pos' ); ?></th>
-							<th style="width: 15%;"><?php esc_html_e( 'Status', 'woocommerce-pos' ); ?></th>
-							<th style="width: 20%;"><?php esc_html_e( 'Actions', 'woocommerce-pos' ); ?></th>
+							<th style="width: 35%;"><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Template', 'woocommerce-pos' ); ?></th>
+							<th style="width: 15%;"><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Type', 'woocommerce-pos' ); ?></th>
+							<th style="width: 15%;"><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Source', 'woocommerce-pos' ); ?></th>
+							<th style="width: 15%;"><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Status', 'woocommerce-pos' ); ?></th>
+							<th style="width: 20%;"><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Actions', 'woocommerce-pos' ); ?></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -313,37 +425,37 @@ class List_Templates {
 								<td>
 									<?php if ( 'theme' === $template['source'] ) : ?>
 										<span class="dashicons dashicons-admin-appearance source-theme"></span>
-										<?php esc_html_e( 'Theme', 'woocommerce-pos' ); ?>
+										<?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Theme', 'woocommerce-pos' ); ?>
 									<?php else : ?>
 										<span class="dashicons dashicons-admin-plugins source-plugin"></span>
-										<?php esc_html_e( 'Plugin', 'woocommerce-pos' ); ?>
+										<?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Plugin', 'woocommerce-pos' ); ?>
 									<?php endif; ?>
 								</td>
 								<td>
 									<?php if ( $is_active ) : ?>
 										<span class="status-active">
 											<span class="dashicons dashicons-yes-alt"></span>
-											<?php esc_html_e( 'Active', 'woocommerce-pos' ); ?>
+											<?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Active', 'woocommerce-pos' ); ?>
 										</span>
 									<?php else : ?>
 										<span class="status-inactive">
-											<?php esc_html_e( 'Inactive', 'woocommerce-pos' ); ?>
+											<?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Inactive', 'woocommerce-pos' ); ?>
 										</span>
 									<?php endif; ?>
 								</td>
 								<td>
 									<?php if ( 'receipt' === $template['type'] && $preview_order ) : ?>
 										<button type="button" class="button button-small wcpos-preview-btn" data-url="<?php echo esc_url( $this->get_preview_url( $template['id'], $preview_order ) ); ?>" data-title="<?php echo esc_attr( $template['title'] ); ?>">
-											<?php esc_html_e( 'Preview', 'woocommerce-pos' ); ?>
+											<?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Preview', 'woocommerce-pos' ); ?>
 										</button>
 									<?php endif; ?>
 									<?php if ( ! $is_active ) : ?>
 										<a href="<?php echo esc_url( $this->get_activate_url( $template['id'] ) ); ?>" class="button button-small">
-											<?php esc_html_e( 'Activate', 'woocommerce-pos' ); ?>
+											<?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Activate', 'woocommerce-pos' ); ?>
 										</a>
 									<?php endif; ?>
 									<a href="<?php echo esc_url( $this->get_copy_template_url( $template['id'] ) ); ?>" class="button button-small">
-										<?php esc_html_e( 'Copy', 'woocommerce-pos' ); ?>
+										<?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Copy', 'woocommerce-pos' ); ?>
 									</a>
 								</td>
 							</tr>
@@ -351,9 +463,10 @@ class List_Templates {
 					</tbody>
 				</table>
 			</div>
+			<?php endif; ?>
 
 			<div class="wcpos-custom-templates-header">
-				<h3><?php esc_html_e( 'Custom Templates', 'woocommerce-pos' ); ?></h3>
+				<h3><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Custom Templates', 'woocommerce-pos' ); ?></h3>
 				<p><?php esc_html_e( 'Create your own custom templates or copy a default template to customize.', 'woocommerce-pos' ); ?></p>
 			</div>
 		</div>
@@ -362,18 +475,18 @@ class List_Templates {
 		<div id="wcpos-preview-modal" class="wcpos-preview-modal">
 			<div class="wcpos-preview-modal-content">
 				<div class="wcpos-preview-modal-header">
-					<h2 id="wcpos-preview-modal-title"><?php esc_html_e( 'Template Preview', 'woocommerce-pos' ); ?></h2>
-					<button type="button" class="wcpos-preview-modal-close" aria-label="<?php esc_attr_e( 'Close', 'woocommerce-pos' ); ?>">&times;</button>
+					<h2 id="wcpos-preview-modal-title"><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Template Preview', 'woocommerce-pos' ); ?></h2>
+					<button type="button" class="wcpos-preview-modal-close" aria-label="<?php /* translators: Label or action in the receipt templates admin screen. */ esc_attr_e( 'Close', 'woocommerce-pos' ); ?>">&times;</button>
 				</div>
 				<div class="wcpos-preview-modal-body">
 					<iframe id="wcpos-preview-iframe" src="about:blank"></iframe>
 				</div>
 				<div class="wcpos-preview-modal-footer">
-					<a id="wcpos-preview-newtab" href="#" target="_blank" class="button">
+					<a id="wcpos-preview-newtab" href="#" target="_blank" rel="noopener noreferrer" class="button">
 						<?php esc_html_e( 'Open in New Tab', 'woocommerce-pos' ); ?>
 					</a>
 					<button type="button" class="button button-primary wcpos-preview-modal-close">
-						<?php esc_html_e( 'Close', 'woocommerce-pos' ); ?>
+						<?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Close', 'woocommerce-pos' ); ?>
 					</button>
 				</div>
 			</div>
@@ -392,7 +505,7 @@ class List_Templates {
 				var url = $(this).data('url');
 				var title = $(this).data('title');
 				
-				modalTitle.text(title + ' - <?php echo esc_js( __( 'Preview', 'woocommerce-pos' ) ); ?>');
+				modalTitle.text(title + ' - <?php echo esc_js( /* translators: Label or action in the receipt templates admin screen. */ __( 'Preview', 'woocommerce-pos' ) ); ?>');
 				iframe.attr('src', url);
 				newTabLink.attr('href', url);
 				modal.addClass('active');
@@ -450,12 +563,13 @@ class List_Templates {
 
 		if ( $is_active ) {
 			$actions = array(
-				'active' => '<span style="color: #00a32a; font-weight: bold;">' . esc_html__( 'Active', 'woocommerce-pos' ) . '</span>',
+				'active' => '<span style="color: #00a32a; font-weight: bold;">' . /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Active', 'woocommerce-pos' ) . '</span>',
 			) + $actions;
 		} else {
 			$actions['activate'] = \sprintf(
 				'<a href="%s">%s</a>',
 				esc_url( $this->get_activate_url( $post->ID ) ),
+				/* translators: Label or action in the receipt templates admin screen. */
 				esc_html__( 'Activate', 'woocommerce-pos' )
 			);
 		}
@@ -472,14 +586,14 @@ class List_Templates {
 		$template_id = isset( $_GET['template_id'] ) ? sanitize_text_field( wp_unslash( $_GET['template_id'] ) ) : '';
 
 		if ( empty( $template_id ) ) {
-			wp_die( esc_html__( 'Invalid template ID.', 'woocommerce-pos' ) );
+			wp_die( /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Invalid template ID.', 'woocommerce-pos' ) );
 		}
 
 		// Determine nonce action based on template ID type.
 		$nonce_action = 'wcpos_activate_template_' . $template_id;
 
 		if ( ! wp_verify_nonce( $_GET['_wpnonce'] ?? '', $nonce_action ) ) {
-			wp_die( esc_html__( 'Security check failed.', 'woocommerce-pos' ) );
+			wp_die( /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Security check failed.', 'woocommerce-pos' ) );
 		}
 
 		if ( ! current_user_can( 'manage_woocommerce_pos' ) ) {
@@ -520,14 +634,14 @@ class List_Templates {
 		$template_id = isset( $_GET['template_id'] ) ? sanitize_text_field( wp_unslash( $_GET['template_id'] ) ) : '';
 
 		if ( empty( $template_id ) ) {
-			wp_die( esc_html__( 'Invalid template ID.', 'woocommerce-pos' ) );
+			wp_die( /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Invalid template ID.', 'woocommerce-pos' ) );
 		}
 
 		// Verify nonce.
 		$nonce_action = 'wcpos_copy_template_' . $template_id;
 
 		if ( ! wp_verify_nonce( $_GET['_wpnonce'] ?? '', $nonce_action ) ) {
-			wp_die( esc_html__( 'Security check failed.', 'woocommerce-pos' ) );
+			wp_die( /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Security check failed.', 'woocommerce-pos' ) );
 		}
 
 		if ( ! current_user_can( 'manage_woocommerce_pos' ) ) {
@@ -538,7 +652,7 @@ class List_Templates {
 		$template = TemplatesManager::get_virtual_template( $template_id );
 
 		if ( ! $template ) {
-			wp_die( esc_html__( 'Template not found.', 'woocommerce-pos' ) );
+			wp_die( /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Template not found.', 'woocommerce-pos' ) );
 		}
 
 		// Read the template file content.
@@ -573,6 +687,8 @@ class List_Templates {
 
 		// Set meta fields.
 		update_post_meta( $post_id, '_template_language', $template['language'] ?? 'php' );
+		update_post_meta( $post_id, '_template_engine', $template['engine'] ?? 'legacy-php' );
+		update_post_meta( $post_id, '_template_output_type', $template['output_type'] ?? 'html' );
 
 		// Redirect to edit the new template.
 		wp_safe_redirect( admin_url( 'post.php?post=' . $post_id . '&action=edit&wcpos_copied=1' ) );
@@ -594,7 +710,7 @@ class List_Templates {
 		if ( isset( $_GET['wcpos_activated'] ) && '1' === $_GET['wcpos_activated'] ) {
 			?>
 			<div class="notice notice-success is-dismissible">
-				<p><?php esc_html_e( 'Template activated successfully.', 'woocommerce-pos' ); ?></p>
+				<p><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Template activated successfully.', 'woocommerce-pos' ); ?></p>
 			</div>
 			<?php
 		}
@@ -604,6 +720,15 @@ class List_Templates {
 			?>
 			<div class="notice notice-success is-dismissible">
 				<p><?php esc_html_e( 'Template copied successfully. You can now edit your custom template.', 'woocommerce-pos' ); ?></p>
+			</div>
+			<?php
+		}
+
+		// Starter installed success notice (shown on edit screen after redirect).
+		if ( isset( $_GET['wcpos_installed'] ) && '1' === $_GET['wcpos_installed'] ) {
+			?>
+			<div class="notice notice-success is-dismissible">
+				<p><?php esc_html_e( 'Starter template installed. You can now customise it and activate it when ready.', 'woocommerce-pos' ); ?></p>
 			</div>
 			<?php
 		}
@@ -647,6 +772,53 @@ class List_Templates {
 	}
 
 	/**
+	 * Get URL to install a starter template.
+	 *
+	 * @param string $starter_key Starter template key.
+	 *
+	 * @return string Install URL.
+	 */
+	private function get_install_starter_url( string $starter_key ): string {
+		return wp_nonce_url(
+			admin_url( 'admin-post.php?action=wcpos_install_starter&starter_key=' . rawurlencode( $starter_key ) ),
+			'wcpos_install_starter_' . $starter_key
+		);
+	}
+
+	/**
+	 * Handle installing a starter template as a custom template.
+	 *
+	 * @return void
+	 */
+	public function install_starter_template(): void {
+		$starter_key = isset( $_GET['starter_key'] ) ? sanitize_text_field( wp_unslash( $_GET['starter_key'] ) ) : '';
+
+		if ( empty( $starter_key ) ) {
+			wp_die( esc_html__( 'Invalid starter template key.', 'woocommerce-pos' ) );
+		}
+
+		$nonce_action = 'wcpos_install_starter_' . $starter_key;
+
+		if ( ! wp_verify_nonce( $_GET['_wpnonce'] ?? '', $nonce_action ) ) {
+			wp_die( /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Security check failed.', 'woocommerce-pos' ) );
+		}
+
+		if ( ! current_user_can( 'manage_woocommerce_pos' ) ) {
+			wp_die( esc_html__( 'You do not have permission to install templates.', 'woocommerce-pos' ) );
+		}
+
+		$post_id = TemplatesManager::install_starter_template( $starter_key );
+
+		if ( is_wp_error( $post_id ) ) {
+			wp_die( esc_html( $post_id->get_error_message() ) );
+		}
+
+		// Redirect to edit the new template.
+		wp_safe_redirect( admin_url( 'post.php?post=' . $post_id . '&action=edit&wcpos_installed=1' ) );
+		exit;
+	}
+
+	/**
 	 * Add custom columns to the Custom Templates list table.
 	 * Order: Title | Type | Status | Date
 	 *
@@ -658,11 +830,17 @@ class List_Templates {
 		$new_columns = array();
 
 		foreach ( $columns as $key => $label ) {
+			// Replace WordPress auto-column with our custom category column.
+			if ( 'taxonomy-wcpos_template_category' === $key ) {
+				$new_columns['wcpos_category'] = /* translators: Label or action in the receipt templates admin screen. */ __( 'Category', 'woocommerce-pos' );
+				continue;
+			}
+
 			// Rename "Template Types" to "Type".
 			if ( 'taxonomy-wcpos_template_type' === $key ) {
-				$new_columns[ $key ] = __( 'Type', 'woocommerce-pos' );
+				$new_columns[ $key ] = /* translators: Label or action in the receipt templates admin screen. */ __( 'Type', 'woocommerce-pos' );
 				// Add Status column after Type.
-				$new_columns['wcpos_status'] = __( 'Status', 'woocommerce-pos' );
+				$new_columns['wcpos_status'] = /* translators: Label or action in the receipt templates admin screen. */ __( 'Status', 'woocommerce-pos' );
 				continue;
 			}
 
@@ -673,7 +851,7 @@ class List_Templates {
 		if ( ! isset( $new_columns['wcpos_status'] ) ) {
 			$date_column = $new_columns['date'] ?? null;
 			unset( $new_columns['date'] );
-			$new_columns['wcpos_status'] = __( 'Status', 'woocommerce-pos' );
+			$new_columns['wcpos_status'] = /* translators: Label or action in the receipt templates admin screen. */ __( 'Status', 'woocommerce-pos' );
 			if ( $date_column ) {
 				$new_columns['date'] = $date_column;
 			}
@@ -691,6 +869,11 @@ class List_Templates {
 	 * @return void
 	 */
 	public function render_custom_column( string $column, int $post_id ): void {
+		if ( 'wcpos_category' === $column ) {
+			$this->render_category_column( $post_id );
+			return;
+		}
+
 		if ( 'wcpos_status' !== $column ) {
 			return;
 		}
@@ -705,13 +888,47 @@ class List_Templates {
 		if ( $is_active ) {
 			echo '<span style="color: #00a32a; font-weight: bold;">';
 			echo '<span class="dashicons dashicons-yes-alt"></span> ';
+			/* translators: Label or action in the receipt templates admin screen. */
 			esc_html_e( 'Active', 'woocommerce-pos' );
 			echo '</span>';
 		} else {
 			echo '<span style="color: #646970;">';
+			/* translators: Label or action in the receipt templates admin screen. */
 			esc_html_e( 'Inactive', 'woocommerce-pos' );
 			echo '</span>';
 		}
+
+		if ( 'logicless' === ( $template['engine'] ?? '' ) ) {
+			echo ' <span class="wcpos-badge-offline">';
+			/* translators: Label or action in the receipt templates admin screen. */
+			esc_html_e( 'Offline', 'woocommerce-pos' );
+			echo '</span>';
+		}
+	}
+
+	/**
+	 * Render the category column as comma-separated names.
+	 *
+	 * @param int $post_id Post ID.
+	 *
+	 * @return void
+	 */
+	private function render_category_column( int $post_id ): void {
+		$terms = wp_get_post_terms( $post_id, 'wcpos_template_category' );
+
+		if ( is_wp_error( $terms ) || empty( $terms ) ) {
+			echo '&mdash;';
+			return;
+		}
+
+		$names = array_map(
+			function ( $term ) {
+				return esc_html( $term->name );
+			},
+			$terms
+		);
+
+		echo implode( ', ', $names ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- each name is esc_html'd above.
 	}
 
 	/**
@@ -759,4 +976,3 @@ class List_Templates {
 		);
 	}
 }
-

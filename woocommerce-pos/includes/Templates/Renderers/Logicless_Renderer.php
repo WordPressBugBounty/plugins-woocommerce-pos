@@ -1,0 +1,86 @@
+<?php
+/**
+ * Logicless receipt renderer.
+ *
+ * Uses Mustache.php to render templates with section blocks:
+ *   {{#key}}...{{/key}}  — iterate arrays or show block for truthy values
+ *   {{^key}}...{{/key}}  — show block when value is empty/falsy
+ *   {{.}}                — current value (for arrays of scalars)
+ *   {{key.path}}         — dot-path placeholder substitution
+ *
+ * Money fields are pre-formatted as currency before rendering.
+ *
+ * @package WCPOS\WooCommercePOS\Templates\Renderers
+ */
+
+namespace WCPOS\WooCommercePOS\Templates\Renderers;
+
+use Mustache\Engine as Mustache_Engine;
+use WCPOS\WooCommercePOS\Interfaces\Receipt_Renderer_Interface;
+use WCPOS\WooCommercePOS\Services\Receipt_Data_Schema;
+use WC_Abstract_Order;
+
+/**
+ * Logicless_Renderer class.
+ */
+class Logicless_Renderer implements Receipt_Renderer_Interface {
+
+	/**
+	 * Render logicless template output.
+	 *
+	 * @param array                  $template     Template metadata/content.
+	 * @param WC_Abstract_Order|null $order        Order object, or null for sample-data preview.
+	 * @param array                  $receipt_data Canonical receipt payload.
+	 */
+	public function render( array $template, ?WC_Abstract_Order $order, array $receipt_data ): void {
+		$content = isset( $template['content'] ) && \is_string( $template['content'] ) ? $template['content'] : '';
+
+		if ( '' === $content ) {
+			echo '<!-- Empty logicless receipt template -->';
+			return;
+		}
+
+		$currency       = $receipt_data['order']['currency'] ?? 'USD';
+		$formatted_data = Receipt_Data_Schema::format_money_fields( $receipt_data, $currency );
+
+		// Safety net: if a template uses {{#t}}...{{/t}} markers (from gallery source),
+		// setting t = true makes Mustache pass the inner text through unchanged.
+		$formatted_data['t'] = true;
+
+		// Strip HTML comments — wp_kses_post removes the delimiters but leaves the text.
+		$content = preg_replace( '/<!--.*?-->/s', '', $content );
+
+		$flags    = ENT_QUOTES | ENT_SUBSTITUTE;
+		$mustache = new Mustache_Engine(
+			array(
+				'entity_flags' => $flags,
+				'escape'       => function ( $value ) use ( $flags ) {
+					if ( \is_array( $value ) ) {
+						return '';
+					}
+
+					return htmlspecialchars( (string) $value, $flags, 'UTF-8' );
+				},
+			)
+		);
+
+		$output = $mustache->render( $content, $formatted_data );
+
+		// Allow print-color-adjust in inline styles so background fills survive print.
+		// wp_kses_post drops CSS properties not on the safe_style_css allowlist by default.
+		$allow_print_color_adjust = function ( array $styles ): array {
+			$styles[] = 'print-color-adjust';
+			$styles[] = '-webkit-print-color-adjust';
+
+			return $styles;
+		};
+
+		add_filter( 'safe_style_css', $allow_print_color_adjust );
+
+		try {
+			echo wp_kses_post( $output );
+		} finally {
+			remove_filter( 'safe_style_css', $allow_print_color_adjust );
+		}
+	}
+}

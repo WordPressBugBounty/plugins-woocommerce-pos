@@ -8,6 +8,7 @@
 namespace WCPOS\WooCommercePOS\Abstracts;
 
 use WCPOS\WooCommercePOS\Interfaces\StoreInterface;
+use WCPOS\WooCommercePOS\Services\Store_Defaults;
 use WC_Countries;
 use function wc_format_country_state_string;
 
@@ -37,6 +38,7 @@ class Store extends \WC_Data implements StoreInterface {
 	protected $data = array(
 		'name'                        => '',
 		'locale'                      => '',
+		'timezone'                    => '',
 		'store_address'               => '',
 		'store_address_2'             => '',
 		'store_city'                  => '',
@@ -72,10 +74,12 @@ class Store extends \WC_Data implements StoreInterface {
 		'url'                         => '',
 		'phone'                       => '',
 		'email'                       => '',
-		'opening_hours'               => '',
+		'opening_hours'               => array(),
+		'opening_hours_notes'         => '',
 		'personal_notes'              => '',
 		'policies_and_conditions'     => '',
 		'footer_imprint'              => '',
+		'tax_ids'                     => array(),
 	);
 
 	/**
@@ -94,8 +98,8 @@ class Store extends \WC_Data implements StoreInterface {
 	 * Set WordPress settings.
 	 */
 	public function set_wordpress_settings() {
-		$this->set_prop( 'name', \get_bloginfo( 'name' ) );
 		$this->set_prop( 'locale', \get_locale() );
+		$this->set_prop( 'timezone', \wp_timezone_string() );
 	}
 
 	/**
@@ -176,6 +180,20 @@ class Store extends \WC_Data implements StoreInterface {
 	 */
 	public function get_locale( $context = 'view' ) {
 		return $this->get_prop( 'locale', $context );
+	}
+
+
+	/**
+	 * Get Store timezone.
+	 *
+	 * Empty string means inherit the WordPress site timezone.
+	 *
+	 * @param string $context What the value is for. Valid values are view and edit.
+	 * @return string
+	 */
+	public function get_timezone( $context = 'view' ) {
+		$value = $this->get_prop( 'timezone', $context );
+		return is_string( $value ) ? $value : '';
 	}
 
 	/**
@@ -431,6 +449,7 @@ class Store extends \WC_Data implements StoreInterface {
 		return $this->get_prop( 'tax_total_display', $context );
 	}
 
+
 		/**
 		 * Get Store default customer.
 		 *
@@ -455,16 +474,21 @@ class Store extends \WC_Data implements StoreInterface {
 	 * Set Pro property defaults from WooCommerce settings.
 	 *
 	 * These properties are fully customizable in the Pro version,
-	 * but in the free version we derive sensible defaults from WooCommerce.
+	 * but in the free version we derive sensible defaults via
+	 * Store_Defaults: WCPOS general settings → WC POS core options
+	 * → WordPress / WooCommerce fallbacks.
 	 */
 	protected function set_pro_property_defaults() {
+		$this->set_prop( 'name', Store_Defaults::name() );
 		$this->set_prop( 'url', \home_url() );
-		$this->set_prop( 'phone', '' ); // No WooCommerce equivalent.
-		$this->set_prop( 'email', \get_option( 'woocommerce_email_from_address', \get_option( 'admin_email' ) ) );
-		$this->set_prop( 'opening_hours', '' );
+		$this->set_prop( 'phone', Store_Defaults::phone() );
+		$this->set_prop( 'email', Store_Defaults::email() );
+		$this->set_prop( 'opening_hours', array() );
+		$this->set_prop( 'opening_hours_notes', '' );
 		$this->set_prop( 'personal_notes', '' );
-		$this->set_prop( 'policies_and_conditions', '' );
+		$this->set_prop( 'policies_and_conditions', Store_Defaults::policies_and_conditions() );
 		$this->set_prop( 'footer_imprint', '' );
+		$this->set_prop( 'tax_ids', Store_Defaults::tax_ids() );
 	}
 
 	/**
@@ -501,10 +525,20 @@ class Store extends \WC_Data implements StoreInterface {
 	 * Get Store opening hours.
 	 *
 	 * @param  string $context What the value is for. Valid values are view and edit.
-	 * @return string
+	 * @return array|string
 	 */
 	public function get_opening_hours( $context = 'view' ) {
 		return $this->get_prop( 'opening_hours', $context );
+	}
+
+	/**
+	 * Get Store opening hours notes.
+	 *
+	 * @param  string $context What the value is for. Valid values are view and edit.
+	 * @return string
+	 */
+	public function get_opening_hours_notes( $context = 'view' ) {
+		return $this->get_prop( 'opening_hours_notes', $context );
 	}
 
 	/**
@@ -555,6 +589,36 @@ class Store extends \WC_Data implements StoreInterface {
 				'country'   => $this->get_store_country(),
 			)
 		);
+	}
+
+	/**
+	 * Get Store tax IDs as a structured array.
+	 *
+	 * @param string $context What the value is for. Valid values are view and edit.
+	 * @return array<int,array<string,string>>
+	 */
+	public function get_tax_ids( $context = 'view' ) {
+		$value = $this->get_prop( 'tax_ids', $context );
+		return is_array( $value ) ? $value : array();
+	}
+
+	/**
+	 * Get the primary tax ID as a formatted scalar.
+	 *
+	 * Back-compat helper for templates using {{store.tax_id}}.
+	 * Returns the first entry's value (verbatim — country prefix is preserved
+	 * exactly as stored), or empty string when no entries exist.
+	 *
+	 * @param string $context What the value is for. Valid values are view and edit.
+	 * @return string
+	 */
+	public function get_tax_id( $context = 'view' ) {
+		$tax_ids = $this->get_tax_ids( $context );
+		if ( empty( $tax_ids ) ) {
+			return '';
+		}
+		$primary = reset( $tax_ids );
+		return isset( $primary['value'] ) ? (string) $primary['value'] : '';
 	}
 
 	/**

@@ -2,8 +2,8 @@
 Contributors: kilbot
 Tags: ecommerce, point-of-sale, pos, inventory, woocommerce
 Requires at least: 5.6
-Tested up to: 6.8
-Stable tag: 1.8.14
+Tested up to: 7.0
+Stable tag: 1.9.0
 License: GPL-3.0
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 
@@ -93,6 +93,18 @@ There is more information on our website at [https://wcpos.com](https://wcpos.co
 
 == Changelog ==
 
+= 1.9.0 - 2026/05/15 =
+Almost three months of work — here are the highlights:
+
+- **New receipt template gallery** — pick from ready-made receipt, invoice, quote, packing slip, gift receipt, kitchen ticket, and right-to-left templates, and switch between them in settings.
+- **Multiple receipt templates** — install and enable several templates side by side instead of being stuck with one.
+- **Thermal printer support** — print receipts directly to thermal printers (58mm and 80mm) over network, Bluetooth, or USB, with a guided setup wizard in the WCPOS apps.
+- **Customer Tax IDs** — a new Tax ID field on the customer form, ready for VAT, ABN, GST, and other regional tax numbers.
+- **Pro: Coupons at the POS** — search for and apply coupons at checkout, with coupon pills in the cart and support for sequential discounts.
+- **Pro: Refunds at the POS** — refund POS orders directly from the till, with a full audit trail.
+- **Pro: Per-store receipt templates** — assign different templates to different stores, and drag-and-drop to reorder them.
+- Plus lots of smaller fixes — tax and coupon calculations, third-party plugin compatibility, faster syncs, and better translations.
+
 = 1.8.14 - 2026/02/19 =
 - **Hardened DB migration locking** — upgrade now uses the WordPress core upgrader lock (`WP_Upgrading`) with an atomic acquisition check and a shutdown fallback, preventing concurrent migrations on high-traffic sites ([#540](https://github.com/wcpos/woocommerce-pos/pull/540))
 - **Fixed offline gateway ignoring POS checkout status** — orders placed with the Cash or Card gateway while offline now respect the configured POS checkout status instead of defaulting to "processing" ([#544](https://github.com/wcpos/woocommerce-pos/pull/544))
@@ -143,3 +155,8 @@ There is more information on our website at [https://wcpos.com](https://wcpos.co
 - **Tightened permission checks** — capability checks now properly match what's configured on the Access settings page ([#467](https://github.com/wcpos/woocommerce-pos/pull/467))
 - **Improved performance during large syncs** — the UI stays responsive while syncing large product catalogs ([8657e1f](https://github.com/wcpos/monorepo/commit/8657e1f))
 - **Fixed web hydration in standalone mode** — the web app loads correctly when accessed directly without the desktop wrapper ([#19](https://github.com/wcpos/monorepo/pull/19))
+
+== Upgrade Notice ==
+
+= 1.9.0 =
+This is a big update with breaking changes. If you're busy, please wait — there's nothing urgent in 1.9.0, and it's safer to give any early bugs a few days to be worked out. Update during quiet time, and always make a backup first.

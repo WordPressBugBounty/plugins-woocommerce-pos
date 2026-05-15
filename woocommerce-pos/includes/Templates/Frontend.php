@@ -122,11 +122,14 @@ class Frontend {
 		 */
 		$development = apply_filters(
 			'woocommerce_pos_development_mode',
-			( \defined( 'WCPOS_DEVELOPMENT' ) && WCPOS_DEVELOPMENT ) || ( isset( $_ENV['DEVELOPMENT'] ) && $_ENV['DEVELOPMENT'] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+			( \defined( 'WCPOS_DEVELOPMENT' ) && WCPOS_DEVELOPMENT ) || ( isset( $_ENV['DEVELOPMENT'] ) && wp_validate_boolean( sanitize_text_field( wp_unslash( $_ENV['DEVELOPMENT'] ) ) ) )
 		);
 
 		$user                 = wp_get_current_user();
-		$cdn_base_url         = $development ? 'http://localhost:4567/build/' : 'https://cdn.jsdelivr.net/gh/wcpos/web-bundle@1.8/build/';
+		// No trailing slash: Metro's runtime concatenates `cdnBaseUrl` with leading-slash paths
+		// (`/_expo/...`, `/assets/...`); a trailing slash here would produce `//`, which jsDelivr
+		// 301-redirects with a year-long cache, breaking lazy chunk loads in the browser.
+		$cdn_base_url         = $development ? 'http://localhost:4567/build' : 'https://cdn.jsdelivr.net/gh/wcpos/web-bundle@1.9/build';
 		$wcpos_base_path      = rtrim( wp_parse_url( woocommerce_pos_url(), PHP_URL_PATH ), '/' );
 		$stores               = array_map(
 			function ( $store ) {
@@ -149,7 +152,7 @@ class Frontend {
 
 		$vars = array(
 			'version'        => VERSION,
-			'manifest'       => $cdn_base_url . 'metadata.json?v=' . VERSION,
+			'manifest'       => $cdn_base_url . '/metadata.json?v=' . VERSION,
 			'homepage'       => woocommerce_pos_url(),
 			'logout_url'     => $this->pos_logout_url(),
 			'site'           => array(
@@ -190,12 +193,13 @@ class Frontend {
 		/**
 		 * Add path to worker scripts.
 		 */
-		$idb_worker = PLUGIN_URL . 'assets/js/indexeddb.worker.js';
+		$idb_worker  = PLUGIN_URL . 'assets/js/indexeddb.worker.js';
+		$opfs_worker = PLUGIN_URL . 'assets/js/opfs.worker.js';
 
 		// getScript helper and initialProps.
 		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Inline JavaScript for POS frontend
 		echo "<script>
-    function getScript(source, callback) {
+    function getScript(source, callback, onError) {
         var script = document.createElement('script');
         script.async = true;
         script.onload = script.onreadystatechange = function(_, isAbort) {
@@ -204,6 +208,10 @@ class Frontend {
                 script = undefined;
                 if (!isAbort && callback) setTimeout(callback, 0);
             }
+        };
+        script.onerror = function() {
+            script.onload = script.onreadystatechange = null;
+            if (onError) onError(new Error('Failed to load script: ' + source));
         };
         script.src = source;
         document.head.appendChild(script);
@@ -223,6 +231,7 @@ class Frontend {
     }
 
     var idbWorker = '{$idb_worker}';
+    var opfsWorker = '{$opfs_worker}';
     var initialProps = {$initial_props};
     var cdnBaseUrl = '{$cdn_base_url}';
 	var baseUrl = '{$wcpos_base_path}';
@@ -234,27 +243,33 @@ class Frontend {
 		window.fetch(request)
 				.then(function(response) { return response.json(); })
 				.then(function(data) {
-						var bundle = data.fileMetadata.web.bundle;
-						var bundleUrl = cdnBaseUrl + bundle;
+						// v1 metadata uses 'bundles' array (metro runtime, common, entry)
+						// v0 fallback uses single 'bundle' string
+						var webMeta = (data && data.fileMetadata && data.fileMetadata.web) || {};
+						var bundles = Array.isArray(webMeta.bundles)
+								? webMeta.bundles.filter(Boolean)
+								: (webMeta.bundle ? [webMeta.bundle] : []);
 
-						// Check if CSS file is specified in the manifest
+						if (!bundles.length) {
+								throw new Error('No JavaScript bundles declared in metadata.json');
+						}
+
+						function loadBundles(index) {
+								if (index >= bundles.length) return;
+								var source = cdnBaseUrl + '/' + bundles[index];
+								getScript(source, function() {
+										loadBundles(index + 1);
+								}, function(error) {
+										console.error(error.message);
+								});
+						}
+
 						if (data.fileMetadata.web.css) {
-								var cssFile = data.fileMetadata.web.css;
-								var cssUrl = cdnBaseUrl + cssFile;
-
-								// Load CSS first
-								loadCSS(cssUrl, function() {
-										console.log('CSS loaded');
-										// Load JavaScript after CSS is loaded
-										getScript(bundleUrl, function() {
-												console.log('JavaScript bundle loaded');
-										});
+								loadCSS(cdnBaseUrl + '/' + data.fileMetadata.web.css, function() {
+										loadBundles(0);
 								});
 						} else {
-								// If no CSS file, load JavaScript immediately
-								getScript(bundleUrl, function() {
-										console.log('JavaScript bundle loaded');
-								});
+								loadBundles(0);
 						}
 				})
 				.catch(function(error) {

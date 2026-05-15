@@ -129,6 +129,8 @@ class Extensions {
 			$network_plugins = array_keys( get_site_option( 'active_sitewide_plugins', array() ) );
 		}
 
+		$auto_updates = (array) get_site_option( 'auto_update_plugins', array() );
+
 		$extensions = array();
 
 		foreach ( $catalog as $entry ) {
@@ -144,7 +146,7 @@ class Extensions {
 
 				$has_update = $remote_version && version_compare( $local_version, $remote_version, '<' );
 
-				if ( $has_update ) {
+				if ( $has_update && $is_active ) {
 					$status = 'update_available';
 				} elseif ( $is_active ) {
 					$status = 'active';
@@ -154,6 +156,15 @@ class Extensions {
 
 				$entry['installed_version'] = $local_version;
 				$entry['plugin_file']       = $plugin_file;
+				$entry['auto_update']       = \in_array( $plugin_file, $auto_updates, true );
+
+				if ( $has_update ) {
+					$entry['has_update'] = true;
+				}
+
+				if ( ! empty( $entry['settings_url'] ) && \is_string( $entry['settings_url'] ) ) {
+					$entry['settings_url'] = admin_url( $entry['settings_url'] );
+				}
 			}
 
 			$entry['status'] = $status;

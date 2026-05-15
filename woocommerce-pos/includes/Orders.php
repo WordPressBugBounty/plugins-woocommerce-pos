@@ -12,6 +12,7 @@
 namespace WCPOS\WooCommercePOS;
 
 use WC_Abstract_Order;
+use WC_Coupon;
 use WC_Order;
 use WC_Order_Item;
 use WC_Order_Item_Product;
@@ -27,11 +28,26 @@ use WC_Tax;
  */
 class Orders {
 	/**
-	 * Whether POS coupon recalculation context is currently active.
+	 * Map of temporary product IDs to category IDs for coupon validation.
 	 *
-	 * @var bool
+	 * Static because multiple Orders instances may register hooks on the same
+	 * filter (plugin init + test setUp). All instances must recognize temp IDs
+	 * assigned by any other instance to avoid invalid DB reads.
+	 *
+	 * @var array<int, int[]>
 	 */
-	private static $coupon_recalculation_active = false;
+	private static $temp_product_categories = array();
+
+	/**
+	 * Counter for generating unique temporary product IDs.
+	 *
+	 * Initialized with a random offset per request to avoid collisions when
+	 * a persistent object cache backend (Redis/Memcached) is active and
+	 * concurrent requests prime the same cache groups.
+	 *
+	 * @var int
+	 */
+	private static $temp_id_counter = 0;
 
 	/**
 	 * Constructor.
@@ -51,8 +67,9 @@ class Orders {
 		add_filter( 'woocommerce_order_get_tax_location', array( $this, 'get_tax_location' ), 10, 2 );
 		add_action( 'woocommerce_order_item_after_calculate_taxes', array( $this, 'order_item_after_calculate_taxes' ) );
 		add_action( 'woocommerce_order_item_shipping_after_calculate_taxes', array( $this, 'order_item_after_calculate_taxes' ) );
-		add_action( 'woocommerce_order_applied_coupon', array( $this, 'before_coupon_recalculation' ), 10, 2 );
 		add_filter( 'woocommerce_coupon_get_items_to_validate', array( $this, 'coupon_get_items_to_validate' ), 10, 2 );
+		add_filter( 'woocommerce_coupon_is_valid_for_product', array( $this, 'coupon_is_valid_for_product' ), 10, 4 );
+		add_action( 'woocommerce_order_after_calculate_totals', array( __CLASS__, 'cleanup_temp_caches' ), 999 );
 	}
 
 	/**
@@ -63,7 +80,7 @@ class Orders {
 	 * @return array
 	 */
 	public function wc_order_statuses( array $order_statuses ): array {
-		$order_statuses['wc-pos-open']    = _x( 'POS - Open', 'Order status', 'woocommerce-pos' );
+		$order_statuses['wc-pos-open']    = /* translators: POS order status label. */ _x( 'POS - Open', 'Order status', 'woocommerce-pos' );
 		$order_statuses['wc-pos-partial'] = _x( 'POS - Partial Payment', 'Order status', 'woocommerce-pos' );
 
 		return $order_statuses;
@@ -130,7 +147,29 @@ class Orders {
 	 */
 	public function payment_complete_order_status( string $status, int $id, WC_Abstract_Order $order ): string {
 		if ( woocommerce_pos_request() ) {
-			return woocommerce_pos_get_settings( 'checkout', 'order_status' );
+			$gateway_status = $this->get_gateway_order_status( $order->get_payment_method() );
+
+			// This filter expects statuses without the 'wc-' prefix.
+			$normalized_status = 0 === strpos( $gateway_status, 'wc-' )
+				? substr( $gateway_status, 3 )
+				: $gateway_status;
+
+			if ( '' === $normalized_status ) {
+				return $status;
+			}
+
+			$valid_statuses = array_map(
+				function ( string $order_status ): string {
+					return 0 === strpos( $order_status, 'wc-' )
+						? substr( $order_status, 3 )
+						: $order_status;
+				},
+				array_keys( wc_get_order_statuses() )
+			);
+
+			return \in_array( $normalized_status, $valid_statuses, true )
+				? $normalized_status
+				: $status;
 		}
 
 		return $status;
@@ -157,14 +196,11 @@ class Orders {
 			return $status;
 		}
 
-		$checkout_order_status = woocommerce_pos_get_settings( 'checkout', 'order_status' );
-		if ( ! \is_string( $checkout_order_status ) || '' === $checkout_order_status ) {
-			return $status;
-		}
+		$gateway_order_status = $this->get_gateway_order_status( $order->get_payment_method() );
 
-		$normalized_status = 0 === strpos( $checkout_order_status, 'wc-' )
-			? substr( $checkout_order_status, 3 )
-			: $checkout_order_status;
+		$normalized_status = 0 === strpos( $gateway_order_status, 'wc-' )
+			? substr( $gateway_order_status, 3 )
+			: $gateway_order_status;
 
 		if ( '' === $normalized_status ) {
 			return $status;
@@ -182,6 +218,31 @@ class Orders {
 		return \in_array( $normalized_status, $valid_statuses, true )
 			? $normalized_status
 			: $status;
+	}
+
+	/**
+	 * Resolve the configured POS order status for a given payment gateway.
+	 *
+	 * Looks up the per-gateway order_status from payment_gateways settings.
+	 * Falls back to 'wc-completed' if no setting is found.
+	 *
+	 * @param string $gateway_id The payment gateway ID.
+	 *
+	 * @return string The configured order status (may include wc- prefix).
+	 */
+	private function get_gateway_order_status( string $gateway_id ): string {
+		$gateway_settings = woocommerce_pos_get_settings( 'payment_gateways' );
+
+		if (
+			is_array( $gateway_settings )
+			&& isset( $gateway_settings['gateways'][ $gateway_id ]['order_status'] )
+			&& is_string( $gateway_settings['gateways'][ $gateway_id ]['order_status'] )
+			&& '' !== $gateway_settings['gateways'][ $gateway_id ]['order_status']
+		) {
+			return $gateway_settings['gateways'][ $gateway_id ]['order_status'];
+		}
+
+		return 'wc-completed';
 	}
 
 	/**
@@ -216,7 +277,9 @@ class Orders {
 			$product = new WC_Product_Simple();
 			$product->set_name( $item->get_name() );
 			$sku = $item->get_meta( '_sku', true );
-			$product->set_sku( $sku ? $sku : '' );
+			if ( $sku ) {
+				$this->set_synthetic_product_sku( $product, $sku );
+			}
 
 			// Misc products are synthetic and never persisted to DB, so we can
 			// safely apply POS price context directly.
@@ -231,6 +294,16 @@ class Orders {
 				if ( isset( $pos_data['tax_status'] ) ) {
 					$product->set_tax_status( $pos_data['tax_status'] );
 				}
+				if ( ! empty( $pos_data['virtual'] ) ) {
+					$product->set_virtual( true );
+				}
+				if ( ! empty( $pos_data['downloadable'] ) ) {
+					$product->set_downloadable( true );
+				}
+				if ( ! empty( $pos_data['categories'] ) && is_array( $pos_data['categories'] ) ) {
+					$category_ids = array_filter( array_map( 'intval', array_column( $pos_data['categories'], 'id' ) ) );
+					$product->set_category_ids( $category_ids );
+				}
 				if ( $this->is_pos_discounted_item_on_sale( $item, $product ) && isset( $pos_data['price'] ) ) {
 					$product->set_sale_price( $pos_data['price'] );
 				}
@@ -239,8 +312,8 @@ class Orders {
 			return $product;
 		}
 
-		// For real products, only apply POS overrides during coupon recalculation.
-		if ( ! self::$coupon_recalculation_active || ! $product || empty( $pos_data_json ) ) {
+		// For real products, only apply POS overrides when pos_data exists.
+		if ( ! $product || empty( $pos_data_json ) ) {
 			return $product;
 		}
 
@@ -311,20 +384,18 @@ class Orders {
 			return $product;
 		}
 
-		if ( $product && $product->get_id() ) {
-			/*
-			 * During coupon recalculation, order_item_product() already returns an
-			 * isolated product instance for real products. Reuse it here to avoid
-			 * a redundant second wc_get_product_object() call.
-			 */
-			if ( ! self::$coupon_recalculation_active ) {
-				$product = wc_get_product_object( $product->get_type(), $product->get_id() );
-			}
+		$is_temp_id = $product && isset( self::$temp_product_categories[ $product->get_id() ] );
+
+		if ( $product && $product->get_id() && ! $is_temp_id ) {
+			// Get a fresh product instance to apply POS overrides.
+			$product = wc_get_product_object( $product->get_type(), $product->get_id() );
 		} elseif ( 0 === $item->get_product_id() ) {
 			$product = new WC_Product_Simple();
 			$product->set_name( $item->get_name() );
 			$sku = $item->get_meta( '_sku', true );
-			$product->set_sku( $sku ? $sku : '' );
+			if ( $sku ) {
+				$this->set_synthetic_product_sku( $product, $sku );
+			}
 		}
 
 		if ( ! $product ) {
@@ -340,11 +411,123 @@ class Orders {
 		if ( isset( $pos_data['tax_status'] ) ) {
 			$product->set_tax_status( $pos_data['tax_status'] );
 		}
+		if ( ! empty( $pos_data['virtual'] ) ) {
+			$product->set_virtual( true );
+		}
+		if ( ! empty( $pos_data['downloadable'] ) ) {
+			$product->set_downloadable( true );
+		}
+		if ( ! empty( $pos_data['categories'] ) && is_array( $pos_data['categories'] ) ) {
+			$category_ids = array_filter( array_map( 'intval', array_column( $pos_data['categories'], 'id' ) ) );
+			$product->set_category_ids( $category_ids );
+
+			// Assign a temporary non-zero ID and prime WP caches so that
+			// WC's get_the_terms() (called via wc_get_product_cat_ids) finds
+			// our categories. get_the_terms() requires get_post() to succeed
+			// and checks the object term cache before querying the DB.
+			if ( 0 === $product->get_id() && ! empty( $category_ids ) ) {
+				if ( 0 === self::$temp_id_counter ) {
+					// Use a random offset so concurrent requests don't collide
+					// when a persistent object cache is active.
+					self::$temp_id_counter = PHP_INT_MAX - wp_rand( 0, 999999 );
+				}
+				$temp_id = self::$temp_id_counter--;
+				$product->set_id( $temp_id );
+				self::$temp_product_categories[ $temp_id ] = $category_ids;
+
+				// Prime post cache so get_post(temp_id) succeeds.
+				$fake_post                = new \stdClass();
+				$fake_post->ID            = $temp_id;
+				$fake_post->post_type     = 'product';
+				$fake_post->post_status   = 'publish';
+				$fake_post->filter        = 'raw';
+				$fake_post->post_parent   = 0;
+				$fake_post->post_title    = '';
+				$fake_post->post_content  = '';
+				$fake_post->post_excerpt  = '';
+				$fake_post->post_date     = '';
+				$fake_post->post_date_gmt = '';
+				wp_cache_set( $temp_id, $fake_post, 'posts' );
+
+				// Prime term cache so get_object_term_cache() returns our IDs.
+				// get_the_terms() checks this cache before querying the DB,
+				// which is how validate_coupon_product_categories sees our categories.
+				wp_cache_set( $temp_id, $category_ids, 'product_cat_relationships' );
+			}
+		}
 		if ( $this->is_pos_discounted_item_on_sale( $item, $product ) && isset( $pos_data['price'] ) ) {
 			$product->set_sale_price( $pos_data['price'] );
 		}
 
 		return $product;
+	}
+
+	/**
+	 * Override coupon category validation for misc products.
+	 *
+	 * WooCommerce uses wc_get_product_cat_ids( $product->get_id() ) to check
+	 * product_categories and excluded_product_categories coupon restrictions.
+	 * Synthetic misc products use temporary non-zero IDs so WC's DB lookup
+	 * doesn't short-circuit. This filter re-evaluates using per-item categories.
+	 *
+	 * @param bool       $valid   Whether the coupon is valid for the product.
+	 * @param WC_Product $product Product being validated.
+	 * @param WC_Coupon  $coupon  Coupon being applied.
+	 * @param mixed      $values  Values (order item or cart item data).
+	 *
+	 * @return bool
+	 */
+	public function coupon_is_valid_for_product( bool $valid, $product, $coupon, $values ): bool {
+		if ( ! $product instanceof WC_Product ) {
+			return $valid;
+		}
+
+		// Only handle products with temp IDs assigned by build_coupon_product_context.
+		$product_id = $product->get_id();
+		if ( ! isset( self::$temp_product_categories[ $product_id ] ) ) {
+			return $valid;
+		}
+
+		$product_cats = $product->get_category_ids();
+		if ( empty( $product_cats ) ) {
+			return $valid;
+		}
+
+		// Include parent categories for hierarchy matching (parity with wc_get_product_cat_ids).
+		foreach ( $product_cats as $cat ) {
+			$product_cats = array_merge( $product_cats, get_ancestors( $cat, 'product_cat' ) );
+		}
+		$product_cats = array_unique( $product_cats );
+
+		// Re-evaluate product_categories restriction.
+		$coupon_cats = $coupon->get_product_categories();
+		if ( ! empty( $coupon_cats ) ) {
+			$valid = $valid && count( array_intersect( $product_cats, $coupon_cats ) ) > 0;
+		}
+
+		// Re-evaluate excluded_product_categories restriction.
+		$excluded_cats = $coupon->get_excluded_product_categories();
+		if ( ! empty( $excluded_cats ) && count( array_intersect( $product_cats, $excluded_cats ) ) > 0 ) {
+			$valid = false;
+		}
+
+		return $valid;
+	}
+
+	/**
+	 * Remove temporary cache entries created by build_coupon_product_context().
+	 *
+	 * Hooked to woocommerce_order_after_calculate_totals (after all coupon
+	 * validation is complete) so that persistent object cache backends
+	 * (Redis/Memcached) don't accumulate stale entries across requests.
+	 */
+	public static function cleanup_temp_caches(): void {
+		foreach ( array_keys( self::$temp_product_categories ) as $temp_id ) {
+			wp_cache_delete( $temp_id, 'posts' );
+			wp_cache_delete( $temp_id, 'product_cat_relationships' );
+		}
+		self::$temp_product_categories = array();
+		self::$temp_id_counter         = 0;
 	}
 
 	/**
@@ -459,223 +642,6 @@ class Orders {
 	}
 
 	/**
-	 * Activate the POS subtotal filter before coupon recalculation.
-	 *
-	 * WooCommerce's recalculate_coupons() uses get_subtotal() as the base price for
-	 * coupon calculations. The POS stores the original price in subtotal and the
-	 * discounted price in _woocommerce_pos_data meta.
-	 *
-	 * This hook fires from apply_coupon() BEFORE recalculate_coupons() runs, so we
-	 * add a filter to temporarily return the POS price as the subtotal.
-	 *
-	 * For remove_coupon(), there is no "before" hook in WooCommerce core. The filter
-	 * is activated manually in Form_Handler::coupon_action() before calling
-	 * $order->remove_coupon().
-	 *
-	 * @see WC_Abstract_Order::apply_coupon()
-	 * @see WC_Abstract_Order::recalculate_coupons()
-	 *
-	 * @param \WC_Coupon        $coupon The coupon object.
-	 * @param WC_Abstract_Order $order  The order object.
-	 */
-	public function before_coupon_recalculation( $coupon, $order ): void {
-		if ( ! woocommerce_pos_is_pos_order( $order ) ) {
-			return;
-		}
-
-		self::activate_pos_subtotal_filter();
-	}
-
-	/**
-	 * Add the subtotal filter if not already active, and schedule its removal.
-	 *
-	 * The filter is removed on the next calculate_totals() call via
-	 * woocommerce_order_after_calculate_totals, which fires at the end of
-	 * recalculate_coupons().
-	 */
-	public static function activate_pos_subtotal_filter(): void {
-		if ( has_filter( 'woocommerce_order_item_get_subtotal', array( static::class, 'filter_pos_item_subtotal' ) ) ) {
-			return;
-		}
-
-		self::$coupon_recalculation_active = true;
-		add_filter( 'woocommerce_order_item_get_subtotal', array( static::class, 'filter_pos_item_subtotal' ), 10, 2 );
-		add_filter( 'woocommerce_order_item_get_subtotal_tax', array( static::class, 'filter_pos_item_subtotal_tax' ), 10, 2 );
-		add_action( 'woocommerce_order_after_calculate_totals', array( static::class, 'deactivate_pos_subtotal_filter' ), 10, 2 );
-	}
-
-	/**
-	 * Filter the line item subtotal to return the POS price (tax-exclusive).
-	 *
-	 * The POS stores the customer-facing price in _woocommerce_pos_data, which is
-	 * tax-inclusive when the order has prices_include_tax. WooCommerce's get_subtotal()
-	 * must always return a tax-exclusive value, so we extract tax when needed.
-	 *
-	 * @param string                $subtotal The original subtotal.
-	 * @param WC_Order_Item_Product $item     The order item.
-	 *
-	 * @return string The tax-exclusive POS price, or the original subtotal.
-	 */
-	public static function filter_pos_item_subtotal( $subtotal, $item ) {
-		$components = self::get_pos_price_components( $item );
-		if ( null === $components ) {
-			return $subtotal;
-		}
-
-		return (string) $components['subtotal'];
-	}
-
-	/**
-	 * Filter the line item subtotal tax during POS coupon recalculation.
-	 *
-	 * Returns the tax portion of the POS price for taxable items, or '0' for
-	 * tax-exempt items. This keeps subtotal and subtotal_tax consistent.
-	 *
-	 * @param string                $subtotal_tax The original subtotal tax.
-	 * @param WC_Order_Item_Product $item         The order item.
-	 *
-	 * @return string
-	 */
-	public static function filter_pos_item_subtotal_tax( $subtotal_tax, $item ) {
-		$components = self::get_pos_price_components( $item );
-		if ( null === $components ) {
-			return $subtotal_tax;
-		}
-
-		return (string) $components['subtotal_tax'];
-	}
-
-	/**
-	 * Split the POS price into tax-exclusive subtotal and tax components.
-	 *
-	 * When the order has prices_include_tax and the item is taxable, extracts
-	 * the tax from the inclusive POS price using WC_Tax::find_rates() and
-	 * WC_Tax::calc_tax() for accuracy. This avoids deriving rates from stored
-	 * values which can become inconsistent after calculate_taxes() runs.
-	 *
-	 * @param WC_Order_Item_Product|mixed $item The order item.
-	 *
-	 * @return array{subtotal: float, subtotal_tax: float}|null Components or null if not a POS item.
-	 */
-	private static function get_pos_price_components( $item ): ?array {
-		if ( ! $item instanceof WC_Order_Item_Product ) {
-			return null;
-		}
-
-		$pos_data_json = $item->get_meta( '_woocommerce_pos_data', true );
-		if ( empty( $pos_data_json ) ) {
-			return null;
-		}
-
-		$pos_data = json_decode( $pos_data_json, true );
-		if ( JSON_ERROR_NONE !== json_last_error() || ! \is_array( $pos_data ) || ! isset( $pos_data['price'] ) ) {
-			return null;
-		}
-
-		$pos_price  = (float) $pos_data['price'] * $item->get_quantity();
-		$tax_status = $pos_data['tax_status'] ?? 'taxable';
-
-		// Non-taxable items (none or shipping-only): no product tax to extract.
-		if ( 'none' === $tax_status || 'shipping' === $tax_status ) {
-			return array(
-				'subtotal'     => $pos_price,
-				'subtotal_tax' => 0.0,
-			);
-		}
-
-		// Check if the order uses tax-inclusive pricing.
-		$order = $item->get_order();
-		if ( ! $order instanceof WC_Order ) {
-			return null;
-		}
-		if ( $order->get_prices_include_tax() ) {
-			$tax_rates = self::get_tax_rates_for_item( $item, $order );
-
-			if ( ! empty( $tax_rates ) ) {
-				$taxes      = WC_Tax::calc_tax( $pos_price, $tax_rates, true );
-				$tax_amount = array_sum( $taxes );
-				$ex_tax     = $pos_price - $tax_amount;
-
-				return array(
-					'subtotal'     => $ex_tax,
-					'subtotal_tax' => $tax_amount,
-				);
-			}
-
-			// No tax rates found: treat as untaxed.
-			return array(
-				'subtotal'     => $pos_price,
-				'subtotal_tax' => 0.0,
-			);
-		}
-
-		// Prices exclude tax: POS price is already tax-exclusive.
-		return array(
-			'subtotal'     => $pos_price,
-			'subtotal_tax' => (float) $item->get_subtotal_tax( 'edit' ),
-		);
-	}
-
-	/**
-	 * Get the applicable tax rates for an order item.
-	 *
-	 * Determines the tax location from the order's POS tax-based-on meta
-	 * (matching the logic in get_tax_location filter) and finds the rates
-	 * for the item's tax class.
-	 *
-	 * @param WC_Order_Item_Product $item  The order item.
-	 * @param WC_Order              $order The order.
-	 *
-	 * @return array Tax rates array from WC_Tax::find_rates().
-	 */
-	private static function get_tax_rates_for_item( $item, $order ): array {
-		$tax_based_on = $order->get_meta( '_woocommerce_pos_tax_based_on' );
-		if ( empty( $tax_based_on ) ) {
-			$tax_based_on = 'base';
-		}
-
-		if ( 'billing' === $tax_based_on ) {
-			$country  = $order->get_billing_country();
-			$state    = $order->get_billing_state();
-			$postcode = $order->get_billing_postcode();
-			$city     = $order->get_billing_city();
-		} elseif ( 'shipping' === $tax_based_on ) {
-			$country  = $order->get_shipping_country();
-			$state    = $order->get_shipping_state();
-			$postcode = $order->get_shipping_postcode();
-			$city     = $order->get_shipping_city();
-		} else {
-			$country  = WC()->countries->get_base_country();
-			$state    = WC()->countries->get_base_state();
-			$postcode = WC()->countries->get_base_postcode();
-			$city     = WC()->countries->get_base_city();
-		}
-
-		return WC_Tax::find_rates(
-			array(
-				'country'   => $country,
-				'state'     => $state,
-				'postcode'  => $postcode,
-				'city'      => $city,
-				'tax_class' => $item->get_tax_class(),
-			)
-		);
-	}
-
-	/**
-	 * Remove the temporary subtotal filter after coupon recalculation completes.
-	 *
-	 * @param bool              $and_taxes Whether taxes were calculated.
-	 * @param WC_Abstract_Order $order     The order object.
-	 */
-	public static function deactivate_pos_subtotal_filter( $and_taxes, $order ): void {
-		self::$coupon_recalculation_active = false;
-		remove_filter( 'woocommerce_order_item_get_subtotal', array( static::class, 'filter_pos_item_subtotal' ), 10 );
-		remove_filter( 'woocommerce_order_item_get_subtotal_tax', array( static::class, 'filter_pos_item_subtotal_tax' ), 10 );
-		remove_action( 'woocommerce_order_after_calculate_totals', array( static::class, 'deactivate_pos_subtotal_filter' ), 10 );
-	}
-
-	/**
 	 * Register the POS order statuses.
 	 */
 	private function register_order_status(): void {
@@ -683,7 +649,7 @@ class Orders {
 		register_post_status(
 			'wc-pos-open',
 			array(
-				'label'                     => _x( 'POS - Open', 'Order status', 'woocommerce-pos' ),
+				'label'                     => /* translators: POS order status label. */ _x( 'POS - Open', 'Order status', 'woocommerce-pos' ),
 				'public'                    => true,
 				'exclude_from_search'       => false,
 				'show_in_admin_all_list'    => true,
@@ -714,5 +680,21 @@ class Orders {
 				),
 			)
 		);
+	}
+
+	/**
+	 * Set SKU on a synthetic product, bypassing WooCommerce's uniqueness check.
+	 *
+	 * Synthetic products (product_id=0) are never saved to the database, so
+	 * SKU collisions with real products are irrelevant. Temporarily disabling
+	 * object_read causes set_sku() to skip the wc_product_has_unique_sku() call.
+	 *
+	 * @param WC_Product_Simple $product Synthetic product instance.
+	 * @param string            $sku     SKU value from order-item meta.
+	 */
+	private function set_synthetic_product_sku( WC_Product_Simple $product, string $sku ): void {
+		$product->set_object_read( false );
+		$product->set_sku( $sku );
+		$product->set_object_read( true );
 	}
 }

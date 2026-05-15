@@ -11,6 +11,8 @@
 namespace WCPOS\WooCommercePOS\Templates;
 
 use Exception;
+use WCPOS\WooCommercePOS\Services\Receipt_Data_Builder;
+use WCPOS\WooCommercePOS\Services\Receipt_Renderer_Factory;
 use WCPOS\WooCommercePOS\Templates as TemplatesManager;
 
 /**
@@ -101,6 +103,9 @@ class Receipt {
 			 * Check for custom template first.
 			 */
 			$custom_template = $this->get_custom_template();
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$is_preview      = isset( $_GET['wcpos_preview_template'] ) && current_user_can( 'manage_woocommerce_pos' );
+			$receipt_data    = $this->get_receipt_data( $order, $is_preview ? 'preview' : 'live' );
 
 			// Start output buffering and register shutdown handler for fatal errors.
 			self::$rendering = true;
@@ -108,7 +113,9 @@ class Receipt {
 			ob_start();
 
 			if ( $custom_template ) {
-				$this->render_custom_template( $custom_template, $order );
+				$template_engine = $this->get_template_engine( $custom_template );
+				$renderer        = ( new Receipt_Renderer_Factory() )->create( $template_engine );
+				$renderer->render( $custom_template, $order, $receipt_data );
 			} else {
 				/**
 				 * Put WC_Order into the global scope so that the template can access it.
@@ -141,6 +148,19 @@ class Receipt {
 			}
 			wc_print_notice( $e->getMessage(), 'error' );
 		}
+	}
+
+	/**
+	 * Get template engine type from metadata.
+	 *
+	 * @param array $template Template metadata.
+	 *
+	 * @return string
+	 */
+	private function get_template_engine( array $template ): string {
+		$engine = isset( $template['engine'] ) ? sanitize_text_field( $template['engine'] ) : 'legacy-php';
+
+		return in_array( $engine, array( 'logicless', 'thermal', 'legacy-php' ), true ) ? $engine : 'legacy-php';
 	}
 
 	/**
@@ -186,7 +206,7 @@ class Receipt {
 		<head>
 			<meta charset="<?php bloginfo( 'charset' ); ?>">
 			<meta name="viewport" content="width=device-width, initial-scale=1">
-			<title><?php esc_html_e( 'Receipt Error', 'woocommerce-pos' ); ?></title>
+			<title><?php /* translators: Short WCPOS UI label; keep concise. */ esc_html_e( 'Receipt Error', 'woocommerce-pos' ); ?></title>
 			<style>
 				* { box-sizing: border-box; margin: 0; padding: 0; }
 				body {
@@ -247,22 +267,22 @@ class Receipt {
 		</head>
 		<body>
 			<div class="error-container">
-				<h1><?php esc_html_e( 'Receipt Template Error', 'woocommerce-pos' ); ?></h1>
+				<h1><?php /* translators: Short WCPOS UI label; keep concise. */ esc_html_e( 'Receipt Template Error', 'woocommerce-pos' ); ?></h1>
 				<p><?php esc_html_e( 'There was a problem rendering the receipt template. This is usually caused by a syntax error or undefined variable in the template code.', 'woocommerce-pos' ); ?></p>
 
 				<?php if ( $show_details ) { ?>
 					<div class="error-details">
 						<strong><?php echo esc_html( $error_type ); ?>:</strong><br>
 						<?php echo esc_html( $error['message'] ); ?><br><br>
-						<strong><?php esc_html_e( 'File:', 'woocommerce-pos' ); ?></strong> <?php echo esc_html( $error['file'] ); ?><br>
-						<strong><?php esc_html_e( 'Line:', 'woocommerce-pos' ); ?></strong> <?php echo esc_html( $error['line'] ); ?>
+						<strong><?php /* translators: Short WCPOS UI label; keep concise. */ esc_html_e( 'File:', 'woocommerce-pos' ); ?></strong> <?php echo esc_html( $error['file'] ); ?><br>
+						<strong><?php /* translators: Short WCPOS UI label; keep concise. */ esc_html_e( 'Line:', 'woocommerce-pos' ); ?></strong> <?php echo esc_html( $error['line'] ); ?>
 					</div>
 
 					<div class="suggestions">
-						<h2><?php esc_html_e( 'Suggestions:', 'woocommerce-pos' ); ?></h2>
+						<h2><?php /* translators: Short WCPOS UI label; keep concise. */ esc_html_e( 'Suggestions:', 'woocommerce-pos' ); ?></h2>
 						<ul>
-							<li><?php esc_html_e( 'Check the template file for syntax errors (missing semicolons, brackets, etc.)', 'woocommerce-pos' ); ?></li>
-							<li><?php esc_html_e( 'Ensure all variables used in the template are defined', 'woocommerce-pos' ); ?></li>
+							<li><?php /* translators: Help text shown on the receipt template fatal error page. */ esc_html_e( 'Check the template file for syntax errors (missing semicolons, brackets, etc.)', 'woocommerce-pos' ); ?></li>
+							<li><?php /* translators: Help text shown on the receipt template fatal error page. */ esc_html_e( 'Ensure all variables used in the template are defined', 'woocommerce-pos' ); ?></li>
 							<li><?php esc_html_e( 'Verify that any custom functions or classes exist', 'woocommerce-pos' ); ?></li>
 							<li><?php esc_html_e( 'Try resetting to the default receipt template', 'woocommerce-pos' ); ?></li>
 						</ul>
@@ -317,6 +337,26 @@ class Receipt {
 	}
 
 	/**
+	 * Get receipt data payload for the selected mode.
+	 *
+	 * @param \WC_Abstract_Order $order Order object.
+	 * @param string             $mode  Receipt mode.
+	 *
+	 * @return array
+	 */
+	private function get_receipt_data( \WC_Abstract_Order $order, string $mode ): array {
+		$mode = 'fiscal' === $mode ? 'live' : $mode;
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$store_id  = 'preview' === $mode && isset( $_GET['store_id'] ) ? (int) $_GET['store_id'] : 0;
+		$pos_store = $store_id > 0 ? wcpos_get_store( $store_id ) : null;
+		if ( $store_id > 0 && ! \is_object( $pos_store ) ) {
+			$pos_store = null;
+		}
+
+		return ( new Receipt_Data_Builder() )->build( $order, $mode, $pos_store );
+	}
+
+	/**
 	 * Get the active custom receipt template.
 	 *
 	 * @return null|array Custom template data or null if not found.
@@ -348,80 +388,38 @@ class Receipt {
 			if ( is_numeric( $preview_id ) ) {
 				// Database template.
 				return TemplatesManager::get_template( (int) $preview_id );
+			}
+
+			// Virtual template (theme/plugin-pro/plugin-core).
+			$template = TemplatesManager::get_virtual_template( $preview_id, 'receipt' );
+			if ( $template ) {
+				return $template;
+			}
+
+			// Gallery template (e.g. "standard-receipt").
+			return TemplatesManager::get_gallery_template_by_key( $preview_id );
+		}
+
+		// Check for template selection parameter (used by POS app to switch templates).
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( isset( $_GET['template'] ) ) {
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$template_id = sanitize_text_field( wp_unslash( $_GET['template'] ) );
+
+			if ( is_numeric( $template_id ) ) {
+				$post_id  = (int) $template_id;
+				$template = 'publish' === get_post_status( $post_id ) ? TemplatesManager::get_template( $post_id ) : null;
 			} else {
-				// Virtual template.
-				return TemplatesManager::get_virtual_template( $preview_id, 'receipt' );
+				$template = TemplatesManager::get_virtual_template( $template_id, 'receipt' );
+			}
+
+			// Only allow published receipt templates.
+			if ( $template && 'receipt' === ( $template['type'] ?? '' ) ) {
+				return $template;
 			}
 		}
 
 		// Get active receipt template (can be virtual or from database).
 		return TemplatesManager::get_active_template( 'receipt' );
-	}
-
-	/**
-	 * Render a custom template.
-	 *
-	 * @param array              $template Custom template data.
-	 * @param \WC_Abstract_Order $order    Order object.
-	 *
-	 * @return void
-	 */
-	private function render_custom_template( array $template, \WC_Abstract_Order $order ): void {
-		// If template has a file path, use that.
-		if ( ! empty( $template['file_path'] ) && file_exists( $template['file_path'] ) ) {
-			include $template['file_path'];
-
-			return;
-		}
-
-		// Otherwise, render from content stored in database.
-		if ( ! empty( $template['content'] ) ) {
-			// Create a temporary file to execute the PHP template.
-			$temp_file = $this->create_temp_template_file( $template['content'] );
-
-			if ( $temp_file ) {
-				include $temp_file;
-				unlink( $temp_file ); // Clean up temporary file.
-			}
-		}
-	}
-
-	/**
-	 * Create a temporary file for the template content.
-	 *
-	 * @param string $content Template content.
-	 *
-	 * @return false|string Path to temporary file or false on failure.
-	 */
-	private function create_temp_template_file( string $content ) {
-		$upload_dir = wp_upload_dir();
-		$temp_dir   = trailingslashit( $upload_dir['basedir'] ) . 'wcpos-templates';
-
-		// Create directory if it doesn't exist.
-		if ( ! file_exists( $temp_dir ) ) {
-			wp_mkdir_p( $temp_dir );
-		}
-
-		// Protect directory from direct access (check every time, not just on creation).
-		$htaccess_file = trailingslashit( $temp_dir ) . '.htaccess';
-		$index_file    = trailingslashit( $temp_dir ) . 'index.php';
-
-		if ( ! file_exists( $htaccess_file ) ) {
-			file_put_contents( $htaccess_file, "deny from all\n" );
-		}
-		if ( ! file_exists( $index_file ) ) {
-			file_put_contents( $index_file, "<?php\n// Silence is golden.\n" );
-		}
-
-		// Create temporary file.
-		$temp_file = tempnam( $temp_dir, 'receipt_' );
-
-		if ( $temp_file ) {
-			file_put_contents( $temp_file, $content );
-
-			return $temp_file;
-		}
-
-		return false;
 	}
 }

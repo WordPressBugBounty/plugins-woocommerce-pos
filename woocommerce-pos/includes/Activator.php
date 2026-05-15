@@ -10,6 +10,7 @@
 
 namespace WCPOS\WooCommercePOS;
 
+use WCPOS\WooCommercePOS\Admin\Consent;
 use const DOING_AJAX;
 
 /**
@@ -119,8 +120,22 @@ class Activator {
 			)
 		);
 
-		// set the auto redirection on next page load
-		// set_transient( 'woocommere_pos_welcome', 1, 30 );.
+		// Flag the consent pop-up for the next admin page load. Done here
+		// because the `activated_plugin` action in Admin\Consent fires
+		// inside the activation request, at which point our plugin's
+		// `plugins_loaded` callback hasn't yet instantiated Init on a
+		// fresh install.
+		//
+		// Read the option directly — woocommerce_pos_get_settings() lives in
+		// wcpos-functions.php which Init loads on `plugins_loaded`, but
+		// plugins_loaded has already fired by the time activation runs.
+		$general_settings = get_option( 'woocommerce_pos_settings_general', array() );
+		$tracking_consent = is_array( $general_settings ) && isset( $general_settings['tracking_consent'] )
+			? $general_settings['tracking_consent']
+			: 'undecided';
+		if ( 'undecided' === $tracking_consent ) {
+			set_transient( Consent::MODAL_TRANSIENT, 1, Consent::MODAL_TRANSIENT_TTL );
+		}
 	}
 
 	/**
@@ -199,8 +214,8 @@ class Activator {
 			return;
 		}
 
-		$message = __( '<strong>WooCommerce REST API</strong> requires <em>pretty</em> permalinks to work correctly', 'woocommerce-pos' ) . '. ';
-		$message .= \sprintf( '<a href="%s">%s</a>', admin_url( 'options-permalink.php' ), __( 'Enable permalinks', 'woocommerce-pos' ) ) . ' &raquo;';
+		$message = /* translators: Plugin activation notice label. */ __( '<strong>WooCommerce REST API</strong> requires <em>pretty</em> permalinks to work correctly', 'woocommerce-pos' ) . '. ';
+		$message .= \sprintf( '<a href="%s">%s</a>', admin_url( 'options-permalink.php' ), /* translators: Plugin activation notice label. */ __( 'Enable permalinks', 'woocommerce-pos' ) ) . ' &raquo;';
 
 		Admin\Notices::add( $message );
 	}
@@ -225,6 +240,19 @@ class Activator {
 		}
 
 		Services\Settings::bump_versions();
+
+		// Re-run activation to sync role capabilities. add_role() and add_cap()
+		// are both idempotent, so this is safe. Without this, capabilities added
+		// in newer versions would never reach existing installs because add_role()
+		// is a no-op when the role already exists.
+		// Deferred to 'init' because create_pos_roles() calls __() which
+		// requires translations to be loaded (WordPress 6.7+).
+		add_action(
+			'init',
+			function () {
+				$this->single_activate();
+			}
+		);
 
 		$lock_released = false;
 		$release_lock  = function () use ( &$lock_released ): void {
@@ -332,13 +360,20 @@ class Activator {
 
 		add_role(
 			'cashier',
+			/* translators: Plugin activation notice label. */
 			__( 'Cashier', 'woocommerce-pos' ),
 			$cashier_capabilities
 		);
 
+		// Sync all capabilities to the existing role. add_role() is a no-op when
+		// the role already exists, so capabilities added in newer versions would
+		// never reach existing installs without this.
 		$this->add_pos_capability(
 			array(
-				'cashier' => array( 'access_woocommerce_pos' ),
+				'cashier' => array_merge(
+					array( 'access_woocommerce_pos' ),
+					array_keys( $cashier_capabilities )
+				),
 			)
 		);
 	}
@@ -375,6 +410,7 @@ class Activator {
 			'1.8.7'        => 'updates/update-1.8.7.php',
 			'1.8.12'       => 'updates/update-1.8.12.php',
 			'1.8.13'       => 'updates/update-1.8.13.php',
+			'1.9.0'        => 'updates/update-1.9.0.php',
 		);
 		foreach ( $db_updates as $version => $updater ) {
 			if ( version_compare( $version, $old, '>' ) &&

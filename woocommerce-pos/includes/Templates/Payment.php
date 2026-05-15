@@ -173,7 +173,7 @@ class Payment {
 		}
 
 		// if ( ! $this->gateway_id ) {
-		// wp_die( esc_html__( 'No gateway selected', 'woocommerce-pos' ) );
+		// wp_die( /* translators: Short WCPOS UI label; keep concise. */ esc_html__( 'No gateway selected', 'woocommerce-pos' ) );
 		// }.
 
 		do_action( 'woocommerce_pos_before_pay' );
@@ -181,6 +181,18 @@ class Payment {
 		try {
 			// initialize order and nonces before the user is switched to customer.
 			$this->initialize_order_and_nonces();
+
+			// Verify order key to prevent unauthenticated access.
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Order key is the auth mechanism here, matching WooCommerce core behavior.
+			$provided_key = isset( $_GET['key'] ) ? sanitize_text_field( wp_unslash( $_GET['key'] ) ) : '';
+			if ( ! $provided_key || $provided_key !== $this->order->get_order_key() ) {
+				wp_die(
+					esc_html__( 'Sorry, this order cannot be paid for. The order key is missing or invalid.', 'woocommerce-pos' ),
+					/* translators: Short WCPOS UI label; keep concise. */
+					esc_html__( 'Error', 'woocommerce-pos' ),
+					array( 'response' => 403 )
+				);
+			}
 
 			/*
 			 * The wp_set_current_user() function changes the global user object but it does not authenticate the user
@@ -209,7 +221,7 @@ class Payment {
 			// $gateway->chosen = true;
 			// }.
 
-			$order_button_text = apply_filters( 'woocommerce_pay_order_button_text', __( 'Pay for order', 'woocommerce-pos' ) ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WooCommerce core hook.
+			$order_button_text = apply_filters( 'woocommerce_pay_order_button_text', /* translators: Short WCPOS UI label; keep concise. */ __( 'Pay for order', 'woocommerce-pos' ) ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WooCommerce core hook.
 
 			include woocommerce_pos_locate_template( 'payment.php' );
 		} catch ( Exception $e ) {
@@ -244,7 +256,7 @@ class Payment {
 		?>
 			<div class="woocommerce-pos-troubleshooting">
 				<div style="text-align:right">
-					<button type="button" class="open-troubleshooting-modal"><?php esc_html_e( 'Checkout Settings', 'woocommerce-pos' ); ?></button>
+					<button type="button" class="open-troubleshooting-modal"><?php /* translators: Short WCPOS UI label; keep concise. */ esc_html_e( 'Checkout Settings', 'woocommerce-pos' ); ?></button>
 				</div>
 				<div id="troubleshooting-modal" class="troubleshooting-modal" style="display: none;">
 					<div class="troubleshooting-modal-content">
@@ -255,17 +267,17 @@ class Payment {
 								<h3><?php esc_html_e( 'Disable All Styles and Scripts', 'woocommerce-pos' ); ?></h3>
 								<label for="disable_wp_head">
 									<input type="checkbox" id="disable_wp_head" name="disable_wp_head" value="1" <?php checked( $this->disable_wp_head ); ?>>
-									<?php esc_html_e( 'Disable wp_head', 'woocommerce-pos' ); ?>
+									<?php /* translators: Short WCPOS UI label; keep concise. */ esc_html_e( 'Disable wp_head', 'woocommerce-pos' ); ?>
 								</label>
 								<br>
 								<label for="disable_wp_footer">
 									<input type="checkbox" id="disable_wp_footer" name="disable_wp_footer" value="1" <?php checked( $this->disable_wp_footer ); ?>>
-									<?php esc_html_e( 'Disable wp_footer', 'woocommerce-pos' ); ?>
+									<?php /* translators: Short WCPOS UI label; keep concise. */ esc_html_e( 'Disable wp_footer', 'woocommerce-pos' ); ?>
 								</label>
 							</div>
 							<div style="display: flex; justify-content: space-between;margin-bottom:20px;">
 								<div style="flex: 1;">
-									<h3><?php esc_html_e( 'Disable Selected Styles', 'woocommerce-pos' ); ?></h3>
+									<h3><?php /* translators: Short WCPOS UI label; keep concise. */ esc_html_e( 'Disable Selected Styles', 'woocommerce-pos' ); ?></h3>
 									<?php
 									foreach ( $merged_style_handles as $handle ) {
 										$checked = ! \in_array( $handle, $style_exclude_list, true ) ? 'checked' : '';
@@ -276,7 +288,7 @@ class Payment {
 									<?php } ?>
 								</div>
 								<div style="flex: 1;">
-									<h3><?php esc_html_e( 'Disable Selected Scripts', 'woocommerce-pos' ); ?></h3>
+									<h3><?php /* translators: Short WCPOS UI label; keep concise. */ esc_html_e( 'Disable Selected Scripts', 'woocommerce-pos' ); ?></h3>
 									<?php
 									foreach ( $merged_script_handles as $handle ) {
 										$checked = ! \in_array( $handle, $script_exclude_list, true ) ? 'checked' : '';
@@ -288,7 +300,7 @@ class Payment {
 								</div>
 							</div>
 							<input type="hidden" name="troubleshooting_form_nonce" value="<?php echo esc_attr( $this->troubleshooting_form_nonce ); ?>" />
-							<button type="submit"><?php esc_html_e( 'Submit', 'woocommerce-pos' ); ?></button>
+							<button type="submit"><?php /* translators: Short WCPOS UI label; keep concise. */ esc_html_e( 'Submit', 'woocommerce-pos' ); ?></button>
 						</form>
 					</div>
 				</div>
@@ -323,7 +335,7 @@ class Payment {
 		ob_start();
 		?>
 		<div class="cashier">
-			<span><?php esc_html_e( 'Cashier', 'woocommerce-pos' ); ?>: </span>
+			<span><?php /* translators: Short WCPOS UI label; keep concise. */ esc_html_e( 'Cashier', 'woocommerce-pos' ); ?>: </span>
 			<span class="cashier-name"><?php echo esc_html( $cashier->display_name ); ?></span>
 		</div>
 		<?php
@@ -340,8 +352,8 @@ class Payment {
 		ob_start();
 		?>
 		<div class="current-user">
-			<span><?php esc_html_e( 'Paying as customer', 'woocommerce-pos' ); ?>: </span>
-						<span class="user-name"><?php echo 0 === $customer->ID ? esc_html__( 'Guest', 'woocommerce-pos' ) : esc_html( $customer->display_name ); ?></span>
+			<span><?php /* translators: Short WCPOS UI label; keep concise. */ esc_html_e( 'Paying as customer', 'woocommerce-pos' ); ?>: </span>
+						<span class="user-name"><?php echo 0 === $customer->ID ? /* translators: Short WCPOS UI label; keep concise. */ esc_html__( 'Guest', 'woocommerce-pos' ) : esc_html( $customer->display_name ); ?></span>
 		</div>
 		<div class="address-fields" style="display: none;">
 			<section class="woocommerce-customer-details">
@@ -460,6 +472,16 @@ class Payment {
 	private function check_troubleshooting_form_submission(): void {
 		// Check if our form has been submitted.
 		if ( isset( $_POST['troubleshooting_form_nonce'] ) ) {
+			// Only allow users with manage_woocommerce capability to modify checkout settings.
+			if ( ! current_user_can( 'manage_woocommerce' ) ) {
+				wp_die(
+					esc_html__( 'You do not have permission to modify checkout settings.', 'woocommerce-pos' ),
+					/* translators: Short WCPOS UI label; keep concise. */
+					esc_html__( 'Error', 'woocommerce-pos' ),
+					array( 'response' => 403 )
+				);
+			}
+
 			// Verify the nonce.
 			if ( ! wp_verify_nonce( $_POST['troubleshooting_form_nonce'], 'troubleshooting_form_nonce' ) ) {
 				// Nonce doesn't verify, we should stop execution here.

@@ -9,6 +9,9 @@ namespace WCPOS\WooCommercePOS\API;
 
 use Closure;
 use WCPOS\WooCommercePOS\Services\Settings as SettingsService;
+use WCPOS\WooCommercePOS\Services\Tax_Id_Detector;
+use WCPOS\WooCommercePOS\Services\Tax_Id_Settings;
+use WCPOS\WooCommercePOS\Services\Tax_Id_Types;
 use WP_Error;
 use WP_REST_Controller;
 use WP_REST_Request;
@@ -146,6 +149,37 @@ class Settings extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/' . $this->rest_base . '/tax_ids',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_tax_ids_settings' ),
+				'permission_callback' => array( $this, 'read_permission_check' ),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/' . $this->rest_base . '/tax_ids',
+			array(
+				'methods'             => WP_REST_Server::EDITABLE,
+				'callback'            => array( $this, 'update_tax_ids_settings' ),
+				'permission_callback' => array( $this, 'update_permission_check' ),
+				'args'                => $this->get_tax_ids_endpoint_args(),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/' . $this->rest_base . '/tax_ids/detection',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_tax_ids_detection' ),
+				'permission_callback' => array( $this, 'read_permission_check' ),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/' . $this->rest_base . '/access',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
@@ -237,6 +271,68 @@ class Settings extends WP_REST_Controller {
 					return \is_bool( $param );
 				},
 			),
+			'restore_stock_on_delete' => array(
+				'validate_callback' => function ( $param, $request, $key ) {
+					return \is_bool( $param );
+				},
+			),
+			'tracking_consent' => array(
+				'validate_callback' => function ( $param, $request, $key ) {
+					return \is_string( $param ) && \in_array( $param, array( 'allowed', 'denied', 'undecided' ), true );
+				},
+			),
+			'store_tax_ids' => array(
+				'validate_callback' => function ( $param, $request, $key ) {
+					return \is_array( $param );
+				},
+			),
+			'store_name' => array(
+				'validate_callback' => function ( $param, $request, $key ) {
+					return \is_string( $param );
+				},
+			),
+			'store_phone' => array(
+				'validate_callback' => function ( $param, $request, $key ) {
+					return \is_string( $param );
+				},
+			),
+			'store_email' => array(
+				'validate_callback' => function ( $param, $request, $key ) {
+					return \is_string( $param );
+				},
+			),
+			'policies_and_conditions' => array(
+				'validate_callback' => function ( $param, $request, $key ) {
+					return \is_string( $param );
+				},
+			),
+		);
+	}
+
+	/**
+	 * Get tax IDs endpoint arguments.
+	 *
+	 * @return Closure[][]
+	 */
+	public function get_tax_ids_endpoint_args(): array {
+		return array(
+			'write_map' => array(
+				'validate_callback' => function ( $param, $request, $key ) {
+					if ( ! \is_array( $param ) ) {
+						return false;
+					}
+					foreach ( $param as $type => $meta_key ) {
+						if ( ! \is_string( $type ) || ! Tax_Id_Types::is_valid_type( $type ) ) {
+							return false;
+						}
+						if ( ! \is_string( $meta_key ) ) {
+							return false;
+						}
+					}
+
+					return true;
+				},
+			),
 		);
 	}
 
@@ -247,9 +343,9 @@ class Settings extends WP_REST_Controller {
 	 */
 	public function get_checkout_endpoint_args(): array {
 		return array(
-			'order_status' => array(
+			'receipt_default_mode' => array(
 				'validate_callback' => function ( $param, $request, $key ) {
-					return \is_string( $param );
+					return \is_string( $param ) && \in_array( $param, array( 'fiscal', 'live' ), true );
 				},
 			),
 			'admin_emails' => array(
@@ -355,6 +451,81 @@ class Settings extends WP_REST_Controller {
 	}
 
 	/**
+	 * Get tax IDs settings.
+	 *
+	 * @param WP_REST_Request $request Full details about the request.
+	 *
+	 * @return array|WP_Error|WP_REST_Response
+	 */
+	public function get_tax_ids_settings( WP_REST_Request $request ) {
+		$tax_ids_settings = woocommerce_pos_get_settings( 'tax_ids' );
+
+		if ( is_wp_error( $tax_ids_settings ) ) {
+			return $tax_ids_settings;
+		}
+
+		$response = new WP_REST_Response( $tax_ids_settings );
+		$response->set_status( 200 );
+
+		return $response;
+	}
+
+	/**
+	 * Update tax IDs settings. POST data is treated as PATCH (partial), merged
+	 * with existing settings.
+	 *
+	 * @param WP_REST_Request $request Full details about the request.
+	 *
+	 * @return array|WP_Error
+	 */
+	public function update_tax_ids_settings( WP_REST_Request $request ) {
+		$old_settings = woocommerce_pos_get_settings( 'tax_ids' );
+		$payload      = $request->get_json_params();
+
+		// `write_map` is intentionally a full replacement (not deep-merged) so
+		// users can remove entries by sending the trimmed map.
+		$settings = array_replace_recursive( $old_settings, $payload );
+		if ( isset( $payload['write_map'] ) && \is_array( $payload['write_map'] ) ) {
+			$settings['write_map'] = $payload['write_map'];
+		}
+
+		$settings_service = SettingsService::instance();
+
+		return $settings_service->save_settings( 'tax_ids', $settings );
+	}
+
+	/**
+	 * Get tax-ID auto-detection summary for the Compatibility tab.
+	 *
+	 * Returns the active third-party plugin ids, the per-type defaults, and the
+	 * fully composed write_map (defaults < inferred < plugin claims < user
+	 * overrides). The UI renders the composed map and surfaces overrides
+	 * inline.
+	 *
+	 * @param WP_REST_Request $request Full details about the request.
+	 *
+	 * @return WP_REST_Response
+	 */
+	public function get_tax_ids_detection( WP_REST_Request $request ) {
+		$summary = ( new Tax_Id_Detector() )->summary();
+
+		$response = new WP_REST_Response(
+			array(
+				'plugins'           => $summary['plugins'],
+				'default_write_map' => Tax_Id_Settings::default_write_map(),
+				'composed_write_map' => $summary['write_map'],
+				// Only customer-applicable types are surfaced: business-register
+				// identifiers (DE/NL/FR/CH commercial-register types) live on the
+				// store, not on customers, so they have no write-map row.
+				'types'             => Tax_Id_Types::customer_applicable_types(),
+			)
+		);
+		$response->set_status( 200 );
+
+		return $response;
+	}
+
+	/**
 	 * Get access settings.
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
@@ -451,7 +622,11 @@ class Settings extends WP_REST_Controller {
 	 */
 	public function update_general_settings( WP_REST_Request $request ) {
 		$old_settings = woocommerce_pos_get_settings( 'general' );
-		$settings     = array_replace_recursive( $old_settings, $request->get_json_params() );
+		$payload      = $request->get_json_params();
+		$settings     = array_replace_recursive( $old_settings, $payload );
+		if ( isset( $payload['store_tax_ids'] ) && \is_array( $payload['store_tax_ids'] ) ) {
+			$settings['store_tax_ids'] = $payload['store_tax_ids'];
+		}
 
 		$settings_service = SettingsService::instance();
 

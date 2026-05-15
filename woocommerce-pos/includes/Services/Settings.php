@@ -36,9 +36,21 @@ class Settings {
 			'default_customer_is_cashier' => false,
 			'barcode_field'               => '_sku',
 			'generate_username'           => true,
+			'restore_stock_on_delete'     => true,
+			'tracking_consent'            => 'undecided',
+			'store_name'                  => '',
+			'store_phone'                 => '',
+			'store_email'                 => '',
+			'policies_and_conditions'     => '',
+			'store_tax_ids'               => array(),
+		),
+		'tax_ids' => array(
+			// Per-type meta-key write overrides. Empty by default: the composed
+			// write_map (defaults + plugin detection + scan) is used.
+			'write_map' => array(),
 		),
 		'checkout' => array(
-			'order_status'    => 'wc-completed',
+			'receipt_default_mode' => 'fiscal',
 			'admin_emails'    => array(
 				'enabled'         => true,
 				'new_order'       => true,
@@ -79,12 +91,14 @@ class Settings {
 			'default_gateway' => 'pos_cash',
 			'gateways'        => array(
 				'pos_cash' => array(
-					'order'   => 0,
-					'enabled' => true,
+					'order'        => 0,
+					'enabled'      => true,
+					'order_status' => 'wc-completed',
 				),
 				'pos_card' => array(
-					'order'   => 1,
-					'enabled' => true,
+					'order'        => 1,
+					'enabled'      => true,
+					'order_status' => 'wc-completed',
 				),
 			),
 		),
@@ -230,6 +244,11 @@ class Settings {
 	 * @return array|WP_Error Returns the updated settings array on success or WP_Error on failure.
 	 */
 	public function save_settings( string $id, array $settings ) {
+		$sanitize_method = 'sanitize_' . $id . '_settings';
+		if ( method_exists( $this, $sanitize_method ) ) {
+			$settings = $this->$sanitize_method( $settings );
+		}
+
 		$settings = array_merge(
 			$settings,
 			array( 'date_modified_gmt' => current_time( 'mysql', true ) )
@@ -247,11 +266,30 @@ class Settings {
 		 */
 		$settings = apply_filters( "woocommerce_pos_pre_save_{$id}_settings", $settings, $id );
 
-		$success = update_option( static::$db_prefix . $id, $settings, false );
+		$option_name    = static::$db_prefix . $id;
+		$previous_value = get_option( $option_name, null );
+		$success        = update_option( $option_name, $settings, false );
+
+		if ( ! $success ) {
+			// update_option() returns false both when the value is unchanged (no DB write) and on
+			// actual failure. Use the value read *before* the write attempt to avoid a post-write
+			// race: a concurrent request could change the option between our write and a re-read.
+			$is_noop = null !== $previous_value
+				&& maybe_serialize( $previous_value ) === maybe_serialize( $settings );
+
+			if ( ! $is_noop ) {
+				return new WP_Error(
+					'woocommerce_pos_settings_error',
+					// translators: %s: Settings group id, ie: 'general' or 'checkout'.
+					\sprintf( __( 'Can not save settings with id %s', 'woocommerce-pos' ), $id ),
+					array( 'status' => 400 )
+				);
+			}
+		}
+
+		$saved_settings = $this->get_settings( $id );
 
 		if ( $success ) {
-			$saved_settings = $this->get_settings( $id );
-
 			/*
 			 * Fires after settings for a specific section are successfully saved.
 			 *
@@ -263,16 +301,9 @@ class Settings {
 			 * @param string $id             The ID of the settings section that was saved.
 			 */
 			do_action( "woocommerce_pos_saved_{$id}_settings", $saved_settings, $id );
-
-			return $saved_settings;
 		}
 
-		return new WP_Error(
-			'woocommerce_pos_settings_error',
-			// translators: %s: Settings group id, ie: 'general' or 'checkout'.
-			\sprintf( __( 'Can not save settings with id %s', 'woocommerce-pos' ), $id ),
-			array( 'status' => 400 )
-		);
+		return $saved_settings;
 	}
 
 	/**
@@ -284,12 +315,28 @@ class Settings {
 		$default_settings = self::$default_settings['general'];
 		$settings         = get_option( self::$db_prefix . 'general', array() );
 
+		// Migrate tracking_consent from the legacy `tools` option if it was set there
+		// before being moved to `general`. Only applies when the general option has no
+		// value yet, so an explicit general-level choice always wins.
+		if ( ! \array_key_exists( 'tracking_consent', $settings ) ) {
+			$legacy_tools = get_option( self::$db_prefix . 'tools', array() );
+			if ( \is_array( $legacy_tools ) && \array_key_exists( 'tracking_consent', $legacy_tools ) ) {
+				$settings['tracking_consent'] = $legacy_tools['tracking_consent'];
+			}
+		}
+
 		// if the key does not exist in db settings, use the default settings.
 		foreach ( $default_settings as $key => $value ) {
 			if ( ! \array_key_exists( $key, $settings ) ) {
 				$settings[ $key ] = $value;
 			}
 		}
+		$settings['store_tax_ids'] = self::sanitize_store_tax_ids( $settings['store_tax_ids'] );
+
+		// Expose resolved fallbacks so the React UI can render them as
+		// placeholders for store_name / store_phone / store_email /
+		// policies_and_conditions when the user has not entered a value.
+		$settings['store_defaults'] = Store_Defaults::fallbacks();
 
 		/*
 		 * Filters the general settings.
@@ -303,6 +350,148 @@ class Settings {
 		 * @hook woocommerce_pos_general_settings
 		 */
 		return apply_filters( 'woocommerce_pos_general_settings', $settings );
+	}
+
+	/**
+	 * Sanitize general settings before persisting.
+	 *
+	 * @param array $settings General settings.
+	 * @return array
+	 */
+	protected function sanitize_general_settings( array $settings ): array {
+		if ( \array_key_exists( 'store_tax_ids', $settings ) ) {
+			$settings['store_tax_ids'] = self::sanitize_store_tax_ids( $settings['store_tax_ids'] );
+		}
+
+		foreach ( array( 'store_name', 'store_phone' ) as $key ) {
+			if ( \array_key_exists( $key, $settings ) ) {
+				$settings[ $key ] = \is_string( $settings[ $key ] )
+					? sanitize_text_field( $settings[ $key ] )
+					: '';
+			}
+		}
+
+		if ( \array_key_exists( 'store_email', $settings ) ) {
+			$email                  = \is_string( $settings['store_email'] ) ? trim( $settings['store_email'] ) : '';
+			$settings['store_email'] = ( '' !== $email && is_email( $email ) ) ? sanitize_email( $email ) : '';
+		}
+
+		if ( \array_key_exists( 'policies_and_conditions', $settings ) ) {
+			$settings['policies_and_conditions'] = \is_string( $settings['policies_and_conditions'] )
+				? sanitize_textarea_field( $settings['policies_and_conditions'] )
+				: '';
+		}
+
+		// store_defaults is a read-only computed field for the UI; never persist it.
+		unset( $settings['store_defaults'] );
+
+		return $settings;
+	}
+
+	/**
+	 * Sanitize the additional free-store tax IDs entered in General settings.
+	 *
+	 * Drops malformed rows and keeps optional country/label fields only when
+	 * non-empty. Values are preserved verbatim apart from normal text-field
+	 * sanitization and surrounding whitespace.
+	 *
+	 * @param mixed $tax_ids Raw tax IDs.
+	 * @return array<int,array<string,string>>
+	 */
+	public static function sanitize_store_tax_ids( $tax_ids ): array {
+		if ( ! \is_array( $tax_ids ) ) {
+			return array();
+		}
+
+		$sanitized = array();
+		foreach ( $tax_ids as $tax_id ) {
+			if ( ! \is_array( $tax_id ) ) {
+				continue;
+			}
+
+			$type  = isset( $tax_id['type'] ) && \is_string( $tax_id['type'] )
+				? sanitize_key( $tax_id['type'] )
+				: '';
+			$value = isset( $tax_id['value'] ) && \is_string( $tax_id['value'] )
+				? trim( sanitize_text_field( $tax_id['value'] ) )
+				: '';
+
+			if ( '' === $type || '' === $value ) {
+				continue;
+			}
+
+			$entry = array(
+				'type'  => $type,
+				'value' => $value,
+			);
+
+			$country = isset( $tax_id['country'] ) && \is_string( $tax_id['country'] )
+				? strtoupper( trim( sanitize_text_field( $tax_id['country'] ) ) )
+				: '';
+			if ( '' !== $country ) {
+				$entry['country'] = $country;
+			}
+
+			$label = isset( $tax_id['label'] ) && \is_string( $tax_id['label'] )
+				? trim( sanitize_text_field( $tax_id['label'] ) )
+				: '';
+			if ( '' !== $label ) {
+				$entry['label'] = $label;
+			}
+
+			$sanitized[] = $entry;
+		}
+
+		return $sanitized;
+	}
+
+	/**
+	 * Get tax IDs settings.
+	 *
+	 * Defaults are merged for any missing keys so the SPA always receives the
+	 * full subtree shape.
+	 *
+	 * @return array
+	 */
+	public function get_tax_ids_settings(): array {
+		$default_settings = self::$default_settings['tax_ids'];
+		$settings         = get_option( self::$db_prefix . 'tax_ids', array() );
+
+		if ( ! \is_array( $settings ) ) {
+			$settings = array();
+		}
+
+		if ( ! \array_key_exists( 'write_map', $settings ) ) {
+			$legacy_general = get_option( self::$db_prefix . 'general', array() );
+			$legacy_tax_ids = array();
+
+			if (
+				\is_array( $legacy_general )
+				&& isset( $legacy_general['tax_ids'] )
+				&& \is_array( $legacy_general['tax_ids'] )
+			) {
+				$legacy_tax_ids = $legacy_general['tax_ids'];
+			}
+
+			if ( isset( $legacy_tax_ids['write_map'] ) && \is_array( $legacy_tax_ids['write_map'] ) ) {
+				$settings['write_map'] = $legacy_tax_ids['write_map'];
+			}
+		}
+
+		foreach ( $default_settings as $key => $value ) {
+			if ( ! \array_key_exists( $key, $settings ) ) {
+				$settings[ $key ] = $value;
+			}
+		}
+
+		/*
+		 * Filters the tax IDs settings.
+		 *
+		 * @param {array} $settings
+		 * @returns {array} $settings
+		 * @hook woocommerce_pos_tax_ids_settings
+		 */
+		return apply_filters( 'woocommerce_pos_tax_ids_settings', $settings );
 	}
 
 	/**
@@ -481,10 +670,30 @@ class Settings {
 		// Note: I need to re-init the gateways here to pass the tests, but it seems to work fine in the app.
 		WC_Payment_Gateways::instance()->init();
 		$installed_gateways = WC_Payment_Gateways::instance()->payment_gateways();
-		$gateways_settings  = array_replace_recursive(
+		$raw_gw_option     = get_option( self::$db_prefix . 'payment_gateways', array() );
+		$gateways_settings = array_replace_recursive(
 			self::$default_settings['payment_gateways'],
-			get_option( self::$db_prefix . 'payment_gateways', array() )
+			$raw_gw_option
 		);
+
+		// Migrate: if old global checkout order_status exists, apply to all gateways.
+		$checkout_settings = get_option( self::$db_prefix . 'checkout', array() );
+		if ( isset( $checkout_settings['order_status'] ) ) {
+			$global_status = $checkout_settings['order_status'];
+			if ( \is_string( $global_status ) && '' !== $global_status ) {
+				foreach ( $gateways_settings['gateways'] as $gw_id => &$gw_data ) {
+					// Check the raw DB value, not the merged value (which includes defaults).
+					if ( ! isset( $raw_gw_option['gateways'][ $gw_id ]['order_status'] ) ) {
+						$gw_data['order_status'] = $global_status;
+					}
+				}
+				unset( $gw_data );
+			}
+			// Remove the old global setting.
+			unset( $checkout_settings['order_status'] );
+			update_option( self::$db_prefix . 'checkout', $checkout_settings );
+			update_option( self::$db_prefix . 'payment_gateways', $gateways_settings );
+		}
 
 		// NOTE - gateways can be installed and uninstalled, so we need to assume the settings data is stale.
 		$response = array(
@@ -492,19 +701,26 @@ class Settings {
 			'gateways'        => array(),
 		);
 
+		// Gateways that represent deferred/unverified payment default to on-hold.
+		$on_hold_gateways = array( 'bacs', 'cheque' );
+
 		// loop through installed gateways and merge with saved settings.
 		foreach ( $installed_gateways as $id => $gateway ) {
 			// sanity check for gateway class.
 			if ( ! is_a( $gateway, 'WC_Payment_Gateway' ) || 'pre_install_woocommerce_payments_promotion' === $id ) {
 				continue;
 			}
+
+			$default_status = in_array( $id, $on_hold_gateways, true ) ? 'wc-on-hold' : 'wc-completed';
+
 			$response['gateways'][ $id ] = array_replace_recursive(
 				array(
-					'id'          => $gateway->id,
-					'title'       => $gateway->title,
-					'description' => $gateway->description,
-					'enabled'     => false,
-					'order'       => 999,
+					'id'           => $gateway->id,
+					'title'        => $gateway->title,
+					'description'  => $gateway->description,
+					'enabled'      => false,
+					'order'        => 999,
+					'order_status' => $default_status,
 				),
 				$gateways_settings['gateways'][ $id ] ?? array()
 			);
@@ -558,6 +774,7 @@ class Settings {
 		if ( empty( $args['post_type'] ) || ! isset( $args['ids'] ) ) {
 			return new WP_Error(
 				'woocommerce_pos_settings_error',
+				/* translators: Error message shown when invalid arguments are provided. */
 				__( 'Invalid arguments provided', 'woocommerce-pos' ),
 				array( 'status' => 400 )
 			);

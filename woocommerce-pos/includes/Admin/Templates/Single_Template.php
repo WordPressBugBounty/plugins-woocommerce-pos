@@ -13,11 +13,53 @@
 namespace WCPOS\WooCommercePOS\Admin\Templates;
 
 use WCPOS\WooCommercePOS\Templates as TemplatesManager;
+use const WCPOS\WooCommercePOS\PLUGIN_URL;
+use const WCPOS\WooCommercePOS\TRANSLATION_VERSION;
+use const WCPOS\WooCommercePOS\VERSION as PLUGIN_VERSION;
 
 /**
  * Single_Template class.
  */
 class Single_Template {
+	private const ENGINE_LANGUAGE_MAP = array(
+		'thermal'    => 'xml',
+		'logicless'  => 'html',
+		'legacy-php' => 'php',
+	);
+
+	/**
+	 * Resolve the template engine to display in the editor.
+	 *
+	 * - If _template_engine meta is stored, use it.
+	 * - New auto-drafts (no meta, never saved) default to 'logicless'.
+	 * - Existing posts with no stored engine (pre-date this feature) fall back to
+	 *   'legacy-php' so old PHP templates are never opened in the wrong mode.
+	 *
+	 * @param \WP_Post $post Post object.
+	 *
+	 * @return string Engine slug.
+	 */
+	private static function get_editor_engine( \WP_Post $post ): string {
+		$engine_meta = get_post_meta( $post->ID, '_template_engine', true );
+		if ( $engine_meta ) {
+			return $engine_meta;
+		}
+		return 'auto-draft' === $post->post_status ? 'logicless' : 'legacy-php';
+	}
+
+	/**
+	 * Canonical engine slug → label map.
+	 *
+	 * @return array<string,string>
+	 */
+	private static function get_engine_options(): array {
+		return array(
+			'logicless'  => /* translators: Label or action in the receipt templates admin screen. */ __( 'HTML (Offline)', 'woocommerce-pos' ),
+			'thermal'    => /* translators: Label or action in the receipt templates admin screen. */ __( 'XML (Receipt Printer)', 'woocommerce-pos' ),
+			'legacy-php' => /* translators: Label or action in the receipt templates admin screen. */ __( 'PHP (Legacy)', 'woocommerce-pos' ),
+		);
+	}
+
 	/**
 	 * Constructor.
 	 */
@@ -32,10 +74,14 @@ class Single_Template {
 		add_action( 'save_post_wcpos_template', array( $this, 'save_post' ), 10, 2 );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
 		add_action( 'admin_notices', array( $this, 'admin_notices' ) );
-		add_action( 'admin_post_wcpos_activate_template', array( $this, 'activate_template' ) );
-		add_action( 'admin_post_wcpos_copy_template', array( $this, 'copy_template' ) );
+		add_action( 'admin_head-post.php', array( $this, 'hide_publish_status_controls' ) );
+		add_action( 'admin_head-post-new.php', array( $this, 'hide_publish_status_controls' ) );
 		add_filter( 'enter_title_here', array( $this, 'change_title_placeholder' ), 10, 2 );
 		add_action( 'edit_form_after_title', array( $this, 'add_template_info' ) );
+
+		// Remove the default content editor — our React app replaces it.
+		// Called directly because this class is instantiated after init.
+		remove_post_type_support( 'wcpos_template', 'editor' );
 	}
 
 	/**
@@ -76,7 +122,7 @@ class Single_Template {
 	 */
 	public function change_title_placeholder( string $title, \WP_Post $post ): string {
 		if ( 'wcpos_template' === $post->post_type ) {
-			$title = __( 'Enter template name', 'woocommerce-pos' );
+			$title = /* translators: Label or action in the receipt templates admin screen. */ __( 'Enter template name', 'woocommerce-pos' );
 		}
 
 		return $title;
@@ -94,26 +140,43 @@ class Single_Template {
 			return;
 		}
 
-		$message = __( 'Edit your template code in the editor below. The content editor uses syntax highlighting based on the template language.', 'woocommerce-pos' );
+		// Back link to the gallery page.
+		$gallery_url = admin_url( 'admin.php?page=wcpos-templates' );
+		printf(
+			'<p style="margin: 0 0 12px;"><a href="%s">&larr; %s</a></p>',
+			esc_url( $gallery_url ),
+			/* translators: Label or action in the receipt templates admin screen. */
+			esc_html__( 'Back to Templates', 'woocommerce-pos' )
+		);
 
-		echo '<div class="wcpos-template-info" style="margin: 10px 0; padding: 10px; background: #f0f0f1; border-left: 4px solid #72aee6;">';
-		echo '<p style="margin: 0;">';
-		echo '<strong>' . esc_html__( 'Template Code Editor', 'woocommerce-pos' ) . '</strong><br>';
-		echo esc_html( $message );
-		echo '</p>';
-		echo '</div>';
+		// Hidden textarea for WordPress save flow — React syncs content here.
+		echo '<textarea name="content" id="wcpos-template-content" style="display:none;">';
+		echo esc_textarea( $post->post_content );
+		echo '</textarea>';
+
+		// React editor mount point.
+		echo '<div id="wcpos-template-editor"></div>';
 	}
 
 	/**
 	 * Add meta boxes.
 	 *
+	 * @param \WP_Post|null $post Post object.
+	 *
 	 * @return void
 	 */
-	public function add_meta_boxes(): void {
+	public function add_meta_boxes( ?\WP_Post $post = null ): void {
+		// Remove default taxonomy metaboxes — consolidated into Template Settings.
+		remove_meta_box( 'wcpos_template_typediv', 'wcpos_template', 'side' );
+		remove_meta_box( 'wcpos_template_categorydiv', 'wcpos_template', 'side' );
+
+		// Move Publish box to the top of the sidebar by re-registering it first.
+		remove_meta_box( 'submitdiv', 'wcpos_template', 'side' );
 		add_meta_box(
-			'wcpos_template_settings',
-			__( 'Template Settings', 'woocommerce-pos' ),
-			array( $this, 'render_settings_metabox' ),
+			'submitdiv',
+			/* translators: Label or action in the receipt templates admin screen. */
+			__( 'Publish', 'woocommerce-pos' ),
+			'post_submit_meta_box',
 			'wcpos_template',
 			'side',
 			'high'
@@ -121,21 +184,35 @@ class Single_Template {
 
 		add_meta_box(
 			'wcpos_template_actions',
+			/* translators: Label or action in the receipt templates admin screen. */
 			__( 'Template Actions', 'woocommerce-pos' ),
 			array( $this, 'render_actions_metabox' ),
 			'wcpos_template',
 			'side',
-			'default'
+			'high'
 		);
 
 		add_meta_box(
-			'wcpos_template_preview',
-			__( 'Template Preview', 'woocommerce-pos' ),
-			array( $this, 'render_preview_metabox' ),
+			'wcpos_template_settings',
+			/* translators: Label or action in the receipt templates admin screen. */
+			__( 'Template Settings', 'woocommerce-pos' ),
+			array( $this, 'render_settings_metabox' ),
 			'wcpos_template',
-			'normal',
-			'default'
+			'side',
+			'high'
 		);
+
+		if ( $post instanceof \WP_Post && wp_get_post_revisions( $post->ID ) ) {
+			add_meta_box(
+				'revisionsdiv',
+				/* translators: Label or action in the receipt templates admin screen. */
+				__( 'Revisions', 'woocommerce-pos' ),
+				'post_revisions_meta_box',
+				'wcpos_template',
+				'normal',
+				'low'
+			);
+		}
 	}
 
 	/**
@@ -148,19 +225,83 @@ class Single_Template {
 	public function render_settings_metabox( \WP_Post $post ): void {
 		wp_nonce_field( 'wcpos_template_settings', 'wcpos_template_settings_nonce' );
 
-		$template = TemplatesManager::get_template( $post->ID );
-		$language = $template ? $template['language'] : 'php';
+		$template    = TemplatesManager::get_template( $post->ID );
+		$engine      = self::get_editor_engine( $post );
+		$paper_width = $template ? ( $template['paper_width'] ?? '' ) : '';
+		$is_premade  = $template && ! empty( $template['is_premade'] );
+		$is_new      = 'auto-draft' === $post->post_status;
+
+		$disabled = ! $is_new ? 'disabled="disabled"' : '';
+
+		$engines = self::get_engine_options();
+
+		$engine_descriptions = array(
+			'logicless'  => __( 'Prints using your browser\'s print dialog. Renders on the device without needing a server connection.', 'woocommerce-pos' ),
+			'thermal'    => __( 'Sends output directly to thermal printers like Epson or Star. Works offline.', 'woocommerce-pos' ),
+			'legacy-php' => __( 'Prints using your browser\'s print dialog. Requires a server connection to generate the receipt.', 'woocommerce-pos' ),
+		);
 
 		?>
+		<!-- Engine -->
 		<p>
-			<label for="wcpos_template_language">
-				<strong><?php esc_html_e( 'Language', 'woocommerce-pos' ); ?></strong>
-			</label>
-			<select name="wcpos_template_language" id="wcpos_template_language" style="width: 100%;">
-				<option value="php" <?php selected( $language, 'php' ); ?>>PHP</option>
-				<option value="javascript" <?php selected( $language, 'javascript' ); ?>>JavaScript</option>
+			<label><strong><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Template Engine', 'woocommerce-pos' ); ?></strong></label>
+			<select name="wcpos_template_engine" id="wcpos-template-engine" style="width: 100%;" <?php echo $disabled; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
+				<?php foreach ( $engines as $value => $label ) : ?>
+					<option value="<?php echo esc_attr( $value ); ?>" <?php selected( $engine, $value ); ?>>
+						<?php echo esc_html( $label ); ?>
+					</option>
+				<?php endforeach; ?>
 			</select>
 		</p>
+		<p id="wcpos-engine-description" class="description" style="margin-top: -8px;">
+			<?php echo esc_html( $engine_descriptions[ $engine ] ?? '' ); ?>
+		</p>
+
+		<!-- Paper Size — only visible for thermal engine -->
+		<?php
+		$paper_disabled = ! $is_new || 'thermal' !== $engine ? 'disabled="disabled"' : '';
+		?>
+		<p id="wcpos-paper-size-field" style="<?php echo 'thermal' !== $engine ? 'display:none;' : ''; ?>">
+			<label><strong><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Paper Size', 'woocommerce-pos' ); ?></strong></label>
+			<select name="wcpos_template_paper_width" id="wcpos-template-paper-width" style="width: 100%;" <?php echo $paper_disabled; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>>
+				<option value="80mm" <?php selected( $paper_width, '80mm' ); ?>><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( '80mm (Standard)', 'woocommerce-pos' ); ?></option>
+				<option value="58mm" <?php selected( $paper_width, '58mm' ); ?>><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( '58mm (Narrow)', 'woocommerce-pos' ); ?></option>
+			</select>
+		</p>
+
+		<?php if ( $is_new ) : ?>
+		<script>
+		(function() {
+			var engineSelect = document.getElementById('wcpos-template-engine');
+			var paperField = document.getElementById('wcpos-paper-size-field');
+			var paperSelect = document.getElementById('wcpos-template-paper-width');
+			var descEl = document.getElementById('wcpos-engine-description');
+			var descriptions = <?php echo wp_json_encode( $engine_descriptions ); ?>;
+
+			if (engineSelect) {
+				engineSelect.addEventListener('change', function() {
+					var val = this.value;
+					if (paperField) {
+						paperField.style.display = val === 'thermal' ? '' : 'none';
+					}
+					if (paperSelect) {
+						paperSelect.disabled = val !== 'thermal';
+					}
+					if (descEl) {
+						descEl.textContent = descriptions[val] || '';
+					}
+					window.dispatchEvent(new CustomEvent('wcposEngineChange', { detail: { engine: val } }));
+				});
+			}
+
+			if (paperSelect) {
+				paperSelect.addEventListener('change', function() {
+					window.dispatchEvent(new CustomEvent('wcposPaperWidthChange', { detail: { paperWidth: this.value } }));
+				});
+			}
+		})();
+		</script>
+		<?php endif; ?>
 		<?php
 	}
 
@@ -172,99 +313,97 @@ class Single_Template {
 	 * @return void
 	 */
 	public function render_actions_metabox( \WP_Post $post ): void {
-		$template  = TemplatesManager::get_template( $post->ID );
-		$type      = $template ? $template['type'] : 'receipt';
-		$is_active = $template ? TemplatesManager::is_active_template( $post->ID, $type ) : false;
+		$is_published = 'publish' === $post->post_status;
+		$action       = $is_published ? 'deactivate' : 'activate';
+		$button_label = $is_published ? /* translators: Label or action in the receipt templates admin screen. */ __( 'Deactivate Template', 'woocommerce-pos' ) : __( 'Activate Template', 'woocommerce-pos' );
+		$description  = $is_published
+			? __( 'This template is active and available for POS receipts.', 'woocommerce-pos' )
+			: __( 'This template is inactive and will not be used for POS receipts.', 'woocommerce-pos' );
+		$button_class = $is_published ? 'button button-large' : 'button button-primary button-large';
 
-		if ( $is_active ) {
-			?>
-			<p style="color: #00a32a; font-weight: bold;">
-				✓ <?php esc_html_e( 'This template is currently active', 'woocommerce-pos' ); ?>
-			</p>
-			<?php
-		} else {
-			?>
-			<p>
-				<a href="<?php echo esc_url( $this->get_activate_url( $post->ID ) ); ?>" 
-				   class="button button-primary button-large" 
-				   style="width: 100%; text-align: center;">
-					<?php esc_html_e( 'Set as Active Template', 'woocommerce-pos' ); ?>
-				</a>
-			</p>
-			<?php
-		}
+		?>
+		<p style="margin-top: 0;">
+			<?php echo esc_html( $description ); ?>
+		</p>
+		<p>
+			<a href="<?php echo esc_url( $this->get_toggle_status_url( $post->ID, $action ) ); ?>"
+			   class="<?php echo esc_attr( $button_class ); ?>"
+			   style="width: 100%; text-align: center;">
+				<?php echo esc_html( $button_label ); ?>
+			</a>
+		</p>
+		<?php
 	}
 
 	/**
-	 * Render preview metabox.
+	 * Hide confusing WordPress Status and Visibility controls in the Publish box.
 	 *
-	 * @param \WP_Post $post Post object.
+	 * Templates use the explicit Active/Inactive controls in Template Actions and
+	 * the gallery list. WordPress visibility does not affect POS template usage.
 	 *
 	 * @return void
 	 */
-	public function render_preview_metabox( \WP_Post $post ): void {
-		$template = TemplatesManager::get_template( $post->ID );
-
-		// Only show preview for receipt templates.
-		if ( ! $template || 'receipt' !== $template['type'] ) {
-			?>
-			<p><?php esc_html_e( 'Preview is only available for receipt templates.', 'woocommerce-pos' ); ?></p>
-			<?php
+	public function hide_publish_status_controls(): void {
+		$screen = get_current_screen();
+		if ( ! $screen || 'wcpos_template' !== $screen->post_type ) {
 			return;
 		}
-
-		// Get the last POS order.
-		$last_order = $this->get_last_pos_order();
-
-		if ( ! $last_order ) {
-			?>
-			<p><?php esc_html_e( 'No POS orders found. Create an order in the POS to preview templates.', 'woocommerce-pos' ); ?></p>
-			<?php
-			return;
-		}
-
-		// Build preview URL with template ID for preview.
-		$preview_url = $this->get_receipt_preview_url( $last_order, $post->ID );
 
 		?>
-		<div class="wcpos-template-preview">
-			<p style="margin-bottom: 10px;">
-				<strong><?php esc_html_e( 'Preview with Order:', 'woocommerce-pos' ); ?></strong> 
-				<a href="<?php echo esc_url( admin_url( 'post.php?post=' . $last_order->get_id() . '&action=edit' ) ); ?>" target="_blank">
-					#<?php echo esc_html( $last_order->get_order_number() ); ?>
-				</a>
-				<span style="margin-left: 10px;">
-					<a href="<?php echo esc_url( $preview_url ); ?>" target="_blank" class="button button-small">
-						<?php esc_html_e( 'Open in New Tab', 'woocommerce-pos' ); ?>
-					</a>
-				</span>
-			</p>
-			<p class="description" style="margin-bottom: 10px;">
-				<?php esc_html_e( 'Note: Save the template first to see your latest changes in the preview.', 'woocommerce-pos' ); ?>
-			</p>
-			<div style="border: 1px solid #ddd; background: #fff;">
-				<iframe 
-					src="<?php echo esc_url( $preview_url ); ?>" 
-					style="width: 100%; height: 600px; border: none;"
-					id="wcpos-template-preview-iframe"
-				></iframe>
-			</div>
-			<p style="margin-top: 10px;">
-				<button type="button" class="button" id="wcpos-refresh-preview">
-					<?php esc_html_e( 'Refresh Preview', 'woocommerce-pos' ); ?>
-				</button>
-			</p>
-		</div>
-
-		<script>
-		jQuery(document).ready(function($) {
-			$('#wcpos-refresh-preview').on('click', function() {
-				var iframe = $('#wcpos-template-preview-iframe');
-				iframe.attr('src', iframe.attr('src'));
-			});
-		});
-		</script>
+		<style>
+			#misc-publishing-actions .misc-pub-post-status,
+			#misc-publishing-actions #visibility {
+				display: none;
+			}
+		</style>
 		<?php
+	}
+
+	/**
+	 * Handle template active/inactive status toggles from the edit screen.
+	 *
+	 * @return void
+	 */
+	public function toggle_template_status(): void {
+		$template_id = isset( $_GET['template_id'] ) ? absint( $_GET['template_id'] ) : 0;
+		$state       = isset( $_GET['state'] ) ? sanitize_key( wp_unslash( $_GET['state'] ) ) : '';
+
+		if ( ! $template_id || ! \in_array( $state, array( 'activate', 'deactivate' ), true ) ) {
+			wp_die( esc_html__( 'Invalid template status request.', 'woocommerce-pos' ) );
+		}
+
+		if ( ! wp_verify_nonce( $_GET['_wpnonce'] ?? '', 'wcpos_toggle_template_status_' . $template_id . '_' . $state ) ) {
+			wp_die( /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Security check failed.', 'woocommerce-pos' ) );
+		}
+
+		if ( ! current_user_can( 'manage_woocommerce_pos' ) ) {
+			wp_die( esc_html__( 'You do not have permission to update templates.', 'woocommerce-pos' ) );
+		}
+
+		$post = get_post( $template_id );
+		if ( ! $post || 'wcpos_template' !== $post->post_type ) {
+			wp_die( /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Invalid template ID.', 'woocommerce-pos' ) );
+		}
+
+		$result = wp_update_post(
+			array(
+				'ID'          => $template_id,
+				'post_status' => 'activate' === $state ? 'publish' : 'draft',
+			),
+			true
+		);
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'post'                 => $template_id,
+					'action'               => 'edit',
+					'wcpos_status_updated' => is_wp_error( $result ) ? '0' : '1',
+				),
+				admin_url( 'post.php' )
+			)
+		);
+		exit;
 	}
 
 	/**
@@ -276,11 +415,11 @@ class Single_Template {
 		$template_id = isset( $_GET['template_id'] ) ? sanitize_text_field( wp_unslash( $_GET['template_id'] ) ) : '';
 
 		if ( empty( $template_id ) ) {
-			wp_die( esc_html__( 'Invalid template ID.', 'woocommerce-pos' ) );
+			wp_die( /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Invalid template ID.', 'woocommerce-pos' ) );
 		}
 
 		if ( ! wp_verify_nonce( $_GET['_wpnonce'] ?? '', 'wcpos_activate_template_' . $template_id ) ) {
-			wp_die( esc_html__( 'Security check failed.', 'woocommerce-pos' ) );
+			wp_die( /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Security check failed.', 'woocommerce-pos' ) );
 		}
 
 		if ( ! current_user_can( 'manage_woocommerce_pos' ) ) {
@@ -334,11 +473,11 @@ class Single_Template {
 		$template_id = isset( $_GET['template_id'] ) ? sanitize_text_field( wp_unslash( $_GET['template_id'] ) ) : '';
 
 		if ( empty( $template_id ) ) {
-			wp_die( esc_html__( 'Invalid template ID.', 'woocommerce-pos' ) );
+			wp_die( /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Invalid template ID.', 'woocommerce-pos' ) );
 		}
 
 		if ( ! wp_verify_nonce( $_GET['_wpnonce'] ?? '', 'wcpos_copy_template_' . $template_id ) ) {
-			wp_die( esc_html__( 'Security check failed.', 'woocommerce-pos' ) );
+			wp_die( /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Security check failed.', 'woocommerce-pos' ) );
 		}
 
 		if ( ! current_user_can( 'manage_woocommerce_pos' ) ) {
@@ -349,7 +488,7 @@ class Single_Template {
 		$virtual_template = TemplatesManager::get_virtual_template( $template_id, 'receipt' );
 
 		if ( ! $virtual_template ) {
-			wp_die( esc_html__( 'Template not found.', 'woocommerce-pos' ) );
+			wp_die( /* translators: Label or action in the receipt templates admin screen. */ esc_html__( 'Template not found.', 'woocommerce-pos' ) );
 		}
 
 		// Create a new custom template from the virtual one.
@@ -375,7 +514,15 @@ class Single_Template {
 		wp_set_object_terms( $post_id, $virtual_template['type'], 'wcpos_template_type' );
 
 		// Set meta.
+		$engine = $virtual_template['engine'] ?? 'legacy-php';
 		update_post_meta( $post_id, '_template_language', $virtual_template['language'] );
+		update_post_meta( $post_id, '_template_engine', $engine );
+		update_post_meta( $post_id, '_template_output_type', $virtual_template['output_type'] ?? 'html' );
+
+		// Bypass wp_kses for offline-capable engines — it strips unknown HTML/XML tags.
+		if ( \in_array( $engine, TemplatesManager::OFFLINE_CAPABLE_ENGINES, true ) ) {
+			TemplatesManager::save_raw_post_content( $post_id, $virtual_template['content'] );
+		}
 
 		// Redirect to edit the new template.
 		wp_safe_redirect(
@@ -399,34 +546,111 @@ class Single_Template {
 	 * @return void
 	 */
 	public function save_post( int $post_id, \WP_Post $post ): void {
-		// Check nonce.
 		if ( ! isset( $_POST['wcpos_template_settings_nonce'] ) ||
 			 ! wp_verify_nonce( $_POST['wcpos_template_settings_nonce'], 'wcpos_template_settings' ) ) {
 			return;
 		}
 
-		// Check autosave.
 		if ( \defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
 			return;
 		}
 
-		// Check permissions.
 		if ( ! current_user_can( 'manage_woocommerce_pos' ) ) {
 			return;
 		}
 
-		// Ensure template has a type - default to 'receipt'.
+		// Premade gallery templates are immutable — ignore POSTed settings.
+		$template   = TemplatesManager::get_template( $post_id );
+		$is_premade = $template && ! empty( $template['is_premade'] );
+		if ( $is_premade ) {
+			return;
+		}
+
+		// Ensure template type term exists (default to receipt).
 		$terms = wp_get_post_terms( $post_id, 'wcpos_template_type' );
-		if ( empty( $terms ) || is_wp_error( $terms ) ) {
+		if ( is_wp_error( $terms ) ) {
+			return;
+		}
+		if ( empty( $terms ) ) {
 			wp_set_object_terms( $post_id, 'receipt', 'wcpos_template_type' );
 		}
 
-		// Save language.
-		if ( isset( $_POST['wcpos_template_language'] ) ) {
-			$language = sanitize_text_field( wp_unslash( $_POST['wcpos_template_language'] ) );
-			if ( \in_array( $language, array( 'php', 'javascript' ), true ) ) {
-				update_post_meta( $post_id, '_template_language', $language );
+		// Engine and paper size are only settable on new templates (first save).
+		// Once the engine meta exists the engine is locked — changing it would
+		// break the template content. We check metadata_exists rather than
+		// post_status because save_post fires after WordPress has already
+		// transitioned auto-draft → draft/publish.
+		if ( ! metadata_exists( 'post', $post_id, '_template_engine' ) ) {
+			if ( isset( $_POST['wcpos_template_engine'] ) ) {
+				$engine = sanitize_text_field( wp_unslash( $_POST['wcpos_template_engine'] ) );
+				if ( \in_array( $engine, array_keys( self::get_engine_options() ), true ) ) {
+					update_post_meta( $post_id, '_template_engine', $engine );
+
+					// Derive output_type from engine.
+					$output_type = 'thermal' === $engine ? 'escpos' : 'html';
+					update_post_meta( $post_id, '_template_output_type', $output_type );
+
+					// Derive language from engine.
+					update_post_meta( $post_id, '_template_language', self::ENGINE_LANGUAGE_MAP[ $engine ] );
+				}
+			} else {
+				// Existing posts with no stored engine (pre-date this feature)
+				// default to legacy-php so old PHP templates are not reclassified.
+				// New auto-drafts will have the engine POSTed from the form above.
+				update_post_meta( $post_id, '_template_engine', 'legacy-php' );
+				update_post_meta( $post_id, '_template_output_type', 'html' );
+				update_post_meta( $post_id, '_template_language', self::ENGINE_LANGUAGE_MAP['legacy-php'] );
 			}
+
+			// Save paper width — only relevant for thermal engine.
+			$saved_engine = get_post_meta( $post_id, '_template_engine', true );
+			if ( 'thermal' === $saved_engine && isset( $_POST['wcpos_template_paper_width'] ) ) {
+				$paper_width = sanitize_text_field( wp_unslash( $_POST['wcpos_template_paper_width'] ) );
+				if ( \in_array( $paper_width, array( '80mm', '58mm' ), true ) ) {
+					update_post_meta( $post_id, '_template_paper_width', $paper_width );
+				}
+			}
+		}
+
+		// Save raw content for offline-capable engines only. Legacy-php templates
+		// are executed via include, so their content must go through wp_kses.
+		$saved_engine = get_post_meta( $post_id, '_template_engine', true );
+		if ( \in_array( $saved_engine, TemplatesManager::OFFLINE_CAPABLE_ENGINES, true ) ) {
+			$this->save_raw_content( $post_id );
+		}
+	}
+
+	/**
+	 * Save raw template content directly to the database.
+	 *
+	 * WordPress applies wp_kses and other content filters during wp_insert_post()
+	 * that encode HTML entities or strip tags in template markup. This method
+	 * overwrites post_content with the raw value from $_POST to preserve the
+	 * original HTML/XML content.
+	 *
+	 * SECURITY: Only call this for non-PHP engines (logicless, thermal).
+	 * Legacy-php templates are executed via include in Legacy_Php_Renderer,
+	 * so their content must remain filtered by wp_kses to prevent code injection.
+	 *
+	 * @param int $post_id Post ID.
+	 *
+	 * @return void
+	 */
+	private function save_raw_content( int $post_id ): void {
+		// Nonce already verified in save_post() which calls this method.
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( ! isset( $_POST['content'] ) || ! is_string( $_POST['content'] ) ) {
+			return;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$raw_content = wp_unslash( $_POST['content'] );
+
+		$result = TemplatesManager::save_raw_post_content( $post_id, $raw_content );
+
+		if ( ! $result ) {
+			// Log failure for debugging; the user will see the filtered content on reload.
+			error_log( sprintf( 'WCPOS: Failed to save raw template content for post %d', $post_id ) );
 		}
 	}
 
@@ -438,85 +662,110 @@ class Single_Template {
 	 * @return void
 	 */
 	public function enqueue_scripts( string $hook ): void {
-		global $post;
-
 		if ( ! \in_array( $hook, array( 'post.php', 'post-new.php' ), true ) ) {
 			return;
 		}
 
-		if ( ! $post || 'wcpos_template' !== $post->post_type ) {
+		$screen = get_current_screen();
+		if ( ! $screen || 'wcpos_template' !== $screen->post_type ) {
 			return;
 		}
 
-		// Enqueue CodeMirror for code editing.
-		wp_enqueue_code_editor( array( 'type' => 'application/x-httpd-php' ) );
-		wp_enqueue_script( 'wp-theme-plugin-editor' );
-		wp_enqueue_style( 'wp-codemirror' );
+		$post = get_post();
+		if ( ! $post instanceof \WP_Post ) {
+			return;
+		}
 
-		// Add CSS to hide Visual editor tab and set editor height.
-		wp_add_inline_style(
-			'wp-codemirror',
-			'
-			/* Hide Visual editor tab for templates */
-			.post-type-wcpos_template #wp-content-editor-tools .wp-editor-tabs {
-				display: none;
-			}
-			.post-type-wcpos_template #wp-content-wrap {
-				border: none;
-			}
-			/* Set CodeMirror editor height */
-			.post-type-wcpos_template .CodeMirror {
-				height: 600px;
-			}
-			'
+		$is_development = isset( $_ENV['DEVELOPMENT'] )
+			&& wp_validate_boolean( sanitize_text_field( wp_unslash( $_ENV['DEVELOPMENT'] ) ) );
+		$dir            = $is_development ? 'build' : 'assets';
+
+		wp_enqueue_style(
+			'wcpos-template-editor-styles',
+			PLUGIN_URL . $dir . '/css/template-editor.css',
+			array(),
+			PLUGIN_VERSION
 		);
 
-		// Add custom script for template editor.
-		wp_add_inline_script(
-			'wp-theme-plugin-editor',
-			"
-			jQuery(document).ready(function($) {
-				// Force Text editor mode (not Visual)
-				if (typeof switchEditors !== 'undefined') {
-					$('#content-html').addClass('wp-editor-area');
-					switchEditors.go('content', 'html');
-				}
+		wp_enqueue_script(
+			'wcpos-template-editor',
+			PLUGIN_URL . $dir . '/js/template-editor.js',
+			array( 'react', 'react-dom', 'wp-api-fetch' ),
+			PLUGIN_VERSION,
+			true
+		);
 
-				// Initialize CodeMirror for the main editor
-				if (typeof wp !== 'undefined' && wp.codeEditor) {
-					var editorSettings = wp.codeEditor.defaultSettings ? _.clone(wp.codeEditor.defaultSettings) : {};
-					var language = $('#wcpos_template_language').val();
-					
-					// Set mode based on language
-					editorSettings.codemirror = _.extend(
-						{},
-						editorSettings.codemirror,
-						{
-							mode: language === 'javascript' ? 'javascript' : 'application/x-httpd-php',
-							lineNumbers: true,
-							lineWrapping: true,
-							indentUnit: 4,
-							indentWithTabs: true,
-							styleActiveLine: true,
-							matchBrackets: true,
-							autoCloseBrackets: true,
-							autoCloseTags: true,
-							lint: false,
-							gutters: ['CodeMirror-linenumbers']
-						}
-					);
-					
-					var editor = wp.codeEditor.initialize($('#content'), editorSettings);
-					
-					// Update CodeMirror mode when language changes
-					$('#wcpos_template_language').on('change', function() {
-						var newLanguage = $(this).val();
-						var newMode = newLanguage === 'javascript' ? 'javascript' : 'application/x-httpd-php';
-						editor.codemirror.setOption('mode', newMode);
-					});
-				}
-			});
-			"
+		wp_add_inline_script(
+			'wcpos-template-editor',
+			$this->get_editor_inline_script( $post ),
+			'before'
+		);
+	}
+
+	/**
+	 * Build the sample receipt data passed to the template editor.
+	 *
+	 * Money fields are run through Receipt_Data_Schema::format_money_fields() so
+	 * the editor's sample-mode preview renders formatted currency strings — the
+	 * same shape the live /preview endpoint returns. Without this the starter
+	 * templates' `*_display` placeholders resolve to empty strings.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function get_sample_receipt_data(): array {
+		$raw = ( new \WCPOS\WooCommercePOS\Services\Preview_Receipt_Builder() )->build();
+
+		return \WCPOS\WooCommercePOS\Services\Receipt_Data_Schema::format_money_fields(
+			$raw,
+			$raw['order']['currency'] ?? 'USD'
+		);
+	}
+
+	/**
+	 * Generate the inline script data for the template editor React app.
+	 *
+	 * @param \WP_Post $post Post object.
+	 *
+	 * @return string JavaScript to inject before the editor script.
+	 */
+	private function get_editor_inline_script( \WP_Post $post ): string {
+		$template = TemplatesManager::get_template( $post->ID );
+		$engine   = self::get_editor_engine( $post );
+
+		// Get sample receipt data from the preview builder.
+		$sample_data = self::get_sample_receipt_data();
+
+		$preview_url = rest_url( 'wcpos/v1/templates/' . $post->ID . '/preview' );
+
+		$paper_width = get_post_meta( $post->ID, '_template_paper_width', true );
+
+		$config = array(
+			'fieldSchema' => \WCPOS\WooCommercePOS\Services\Receipt_Data_Schema::get_field_tree(),
+			'sampleData'  => $sample_data,
+			'engine'      => $engine,
+			'paperWidth'  => $paper_width ? $paper_width : null,
+			'templateId'  => $post->ID,
+			'previewUrl'  => $preview_url,
+			'postContent'  => $post->post_content,
+			'hasPosOrders' => (bool) wc_get_orders(
+				array(
+					'limit'       => 1,
+					'return'      => 'ids',
+					'status'      => array( 'completed', 'processing', 'on-hold', 'pending' ),
+					'created_via' => 'woocommerce-pos',
+				)
+			),
+		);
+
+		$encoded_config = wp_json_encode( $config );
+		if ( false === $encoded_config ) {
+			$encoded_config = '{}';
+		}
+
+		return \sprintf(
+			'var wcpos = wcpos || {}; wcpos.translationVersion = %s; var wcposTemplateEditor = %s;',
+			wp_json_encode( TRANSLATION_VERSION ),
+			$encoded_config
 		);
 	}
 
@@ -526,9 +775,8 @@ class Single_Template {
 	 * @return void
 	 */
 	public function admin_notices(): void {
-		global $post;
-
-		if ( ! $post || 'wcpos_template' !== $post->post_type ) {
+		$screen = get_current_screen();
+		if ( ! $screen || 'wcpos_template' !== $screen->post_type ) {
 			return;
 		}
 
@@ -536,7 +784,25 @@ class Single_Template {
 		if ( isset( $_GET['wcpos_activated'] ) && '1' === $_GET['wcpos_activated'] ) {
 			?>
 			<div class="notice notice-success is-dismissible">
-				<p><?php esc_html_e( 'Template activated successfully.', 'woocommerce-pos' ); ?></p>
+				<p><?php /* translators: Label or action in the receipt templates admin screen. */ esc_html_e( 'Template activated successfully.', 'woocommerce-pos' ); ?></p>
+			</div>
+			<?php
+		}
+
+		// Status toggle notices.
+		if ( isset( $_GET['wcpos_status_updated'] ) ) {
+			$success = '1' === $_GET['wcpos_status_updated'];
+			?>
+			<div class="notice <?php echo $success ? 'notice-success' : 'notice-error'; ?> is-dismissible">
+				<p>
+					<?php
+					echo esc_html(
+						$success
+							? /* translators: Label or action in the receipt templates admin screen. */ __( 'Template status updated successfully.', 'woocommerce-pos' )
+							: __( 'Failed to update template status.', 'woocommerce-pos' )
+					);
+					?>
+				</p>
 			</div>
 			<?php
 		}
@@ -546,6 +812,15 @@ class Single_Template {
 			?>
 			<div class="notice notice-success is-dismissible">
 				<p><?php esc_html_e( 'Template copied successfully. You can now edit your custom template.', 'woocommerce-pos' ); ?></p>
+			</div>
+			<?php
+		}
+
+		// Starter installed success notice (shown on edit screen after redirect).
+		if ( isset( $_GET['wcpos_installed'] ) && '1' === $_GET['wcpos_installed'] ) {
+			?>
+			<div class="notice notice-success is-dismissible">
+				<p><?php esc_html_e( 'Starter template installed. You can now customise it and activate it when ready.', 'woocommerce-pos' ); ?></p>
 			</div>
 			<?php
 		}
@@ -561,62 +836,17 @@ class Single_Template {
 	}
 
 	/**
-	 * Get the last POS order.
-	 * Compatible with both traditional posts and HPOS.
+	 * Get template status toggle URL.
 	 *
-	 * @return null|\WC_Order Order object or null if not found.
+	 * @param int    $template_id Template ID.
+	 * @param string $state       Desired state (activate or deactivate).
+	 *
+	 * @return string Toggle URL.
 	 */
-	private function get_last_pos_order(): ?\WC_Order {
-		// Get recent orders and check each one for POS origin.
-		// This approach works with both legacy and HPOS storage.
-		$args = array(
-			'limit'   => 20, // Check the last 20 orders to find a POS one.
-			'orderby' => 'date',
-			'order'   => 'DESC',
-			'status'  => array( 'completed', 'processing', 'on-hold', 'pending' ),
-		);
-
-		$orders = wc_get_orders( $args );
-
-		foreach ( $orders as $order ) {
-			if ( \wcpos_is_pos_order( $order ) ) {
-				return $order;
-			}
-		}
-
-		return null;
-	}
-
-	/**
-	 * Get receipt preview URL for an order.
-	 *
-	 * @param \WC_Order $order       Order object.
-	 * @param int       $template_id Template ID to preview.
-	 *
-	 * @return string Receipt URL.
-	 */
-	private function get_receipt_preview_url( \WC_Order $order, int $template_id ): string {
-		return add_query_arg(
-			array(
-				'key'                    => $order->get_order_key(),
-				'wcpos_preview_template' => $template_id,
-			),
-			get_home_url( null, '/wcpos-checkout/wcpos-receipt/' . $order->get_id() )
-		);
-	}
-
-	/**
-	 * Get activate template URL.
-	 *
-	 * @param int $template_id Template ID.
-	 *
-	 * @return string Activate URL.
-	 */
-	private function get_activate_url( int $template_id ): string {
+	private function get_toggle_status_url( int $template_id, string $state ): string {
 		return wp_nonce_url(
-			admin_url( 'admin-post.php?action=wcpos_activate_template&template_id=' . $template_id ),
-			'wcpos_activate_template_' . $template_id
+			admin_url( 'admin-post.php?action=wcpos_toggle_template_status&template_id=' . $template_id . '&state=' . $state ),
+			'wcpos_toggle_template_status_' . $template_id . '_' . $state
 		);
 	}
 }
-

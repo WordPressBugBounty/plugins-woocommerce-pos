@@ -9,6 +9,7 @@ namespace WCPOS\WooCommercePOS\Admin;
 
 use const WCPOS\WooCommercePOS\PLUGIN_NAME;
 use const WCPOS\WooCommercePOS\PLUGIN_URL;
+use const WCPOS\WooCommercePOS\TRANSLATION_VERSION;
 use const WCPOS\WooCommercePOS\VERSION;
 
 /**
@@ -35,13 +36,14 @@ class Analytics {
 	 * Enqueue analytics assets.
 	 */
 	public function enqueue_assets() {
-		$is_development = isset( $_ENV['DEVELOPMENT'] ) && sanitize_text_field( $_ENV['DEVELOPMENT'] );
+		$is_development = isset( $_ENV['DEVELOPMENT'] )
+			&& wp_validate_boolean( sanitize_text_field( wp_unslash( $_ENV['DEVELOPMENT'] ) ) );
 		$dir = $is_development ? 'build' : 'assets';
 
 		// Inject translation version for i18next.
 		wp_add_inline_script(
 			'wp-hooks',
-			'window.wcpos = window.wcpos || {}; window.wcpos.translationVersion = "' . esc_js( VERSION ) . '";',
+			'window.wcpos = window.wcpos || {}; window.wcpos.translationVersion = "' . esc_js( TRANSLATION_VERSION ) . '";',
 			'before'
 		);
 
@@ -55,5 +57,7 @@ class Analytics {
 			VERSION,
 			true
 		);
+
+		wp_add_inline_script( PLUGIN_NAME . '-analytics', Menu::get_posthog_inline_script(), 'before' );
 	}
 }

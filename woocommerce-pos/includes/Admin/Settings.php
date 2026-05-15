@@ -54,6 +54,7 @@ class Settings {
 				<p>%s <a href="mailto:support@wcpos.com">support@wcpos.com</a></p>
 			</div>
 		</div>',
+			/* translators: Short WCPOS UI label; keep concise. */
 			esc_html__( 'Error', 'woocommerce-pos' ),
 			esc_html__( 'Settings failed to load, please contact support', 'woocommerce-pos' )
 		);
@@ -90,7 +91,8 @@ class Settings {
 	 * @return void
 	 */
 	public function enqueue_assets(): void {
-		$is_development = isset( $_ENV['DEVELOPMENT'] ) && sanitize_text_field( wp_unslash( $_ENV['DEVELOPMENT'] ) );
+		$is_development = isset( $_ENV['DEVELOPMENT'] )
+			&& wp_validate_boolean( sanitize_text_field( wp_unslash( $_ENV['DEVELOPMENT'] ) ) );
 		$dir            = $is_development ? 'build' : 'assets';
 
 		wp_enqueue_style(
@@ -114,6 +116,8 @@ class Settings {
 			true
 		);
 
+		wp_add_inline_script( PLUGIN_NAME . '-settings', Menu::get_posthog_inline_script(), 'before' );
+
 		// Add inline script.
 		wp_add_inline_script( PLUGIN_NAME . '-settings', $this->inline_script(), 'before' );
 	}
@@ -127,48 +131,82 @@ class Settings {
 		$settings_service = SettingsService::instance();
 		$barcodes         = array_values( $settings_service->get_barcodes() );
 		$order_statuses   = $settings_service->get_order_statuses();
-		$new_ext_count    = $this->get_new_extensions_count();
+		$update_ext_count = $this->get_update_available_count();
 		$unread_logs      = Logs::get_unread_counts( get_current_user_id() );
+		$current_user_id  = get_current_user_id();
+		$countries        = function_exists( 'WC' )
+			? WC()->countries->get_countries()
+			: array();
+		$store_country    = function_exists( 'WC' )
+			? WC()->countries->get_base_country()
+			: '';
 
 		return \sprintf(
 			'var wcpos = wcpos || {}; wcpos.settings = {
             barcodes: %s,
             order_statuses: %s,
-            newExtensionsCount: %s,
-            unreadLogCounts: %s
+            countries: %s,
+            storeCountry: %s,
+            updateExtensionsCount: %s,
+            unreadLogCounts: %s,
+            currentUserId: %s
         }; wcpos.translationVersion = %s;',
 			json_encode( $barcodes ),
 			json_encode( $order_statuses ),
-			json_encode( $new_ext_count ),
+			json_encode( $countries ),
+			json_encode( $store_country ),
+			json_encode( $update_ext_count ),
 			json_encode( $unread_logs ),
+			json_encode( $current_user_id ),
 			json_encode( TRANSLATION_VERSION )
 		);
 	}
 
 	/**
-	 * Get the count of extensions the current user hasn't seen yet.
+	 * Get the count of extensions that have updates available.
 	 *
-	 * Uses the cached catalog transient to avoid remote fetches on every page load.
-	 * Returns null if the catalog hasn't been fetched yet.
+	 * Uses the cached catalog transient and local plugin versions to avoid
+	 * remote fetches on every page load. Returns null if the catalog hasn't
+	 * been fetched yet.
 	 *
 	 * @return int|null
 	 */
-	private function get_new_extensions_count(): ?int {
+	private function get_update_available_count(): ?int {
 		$cached = get_transient( ExtensionsService::TRANSIENT_KEY );
 
 		if ( false === $cached || ! \is_array( $cached ) ) {
 			return null;
 		}
 
-		$catalog_slugs = array_column( $cached, 'slug' );
-		$seen_slugs    = get_user_meta( get_current_user_id(), '_wcpos_seen_extension_slugs', true );
-
-		if ( ! \is_array( $seen_slugs ) ) {
-			$seen_slugs = array();
+		if ( ! \function_exists( 'get_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
 
-		$new_slugs = array_diff( $catalog_slugs, $seen_slugs );
+		$installed_plugins = get_plugins();
+		$installed_by_slug = array();
+		$count             = 0;
 
-		return \count( $new_slugs );
+		foreach ( $installed_plugins as $plugin_file => $plugin_data ) {
+			$parts = explode( '/', $plugin_file, 2 );
+			if ( isset( $parts[1] ) ) {
+				$installed_by_slug[ $parts[0] ] = $plugin_data['Version'] ?? '';
+			}
+		}
+
+		foreach ( $cached as $entry ) {
+			if ( ! \is_array( $entry ) ) {
+				continue;
+			}
+			$slug       = $entry['slug'] ?? '';
+			$remote_ver = $entry['latest_version'] ?? $entry['version'] ?? '';
+
+			if ( $slug && $remote_ver && isset( $installed_by_slug[ $slug ] ) ) {
+				if ( version_compare( $installed_by_slug[ $slug ], $remote_ver, '<' ) ) {
+					++$count;
+				}
+			}
+		}
+
+		return $count;
 	}
 }
