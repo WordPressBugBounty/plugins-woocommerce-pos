@@ -286,7 +286,6 @@ return array(
     'WCPOS\\WooCommercePOS\\Admin\\Products\\List_Products' => $baseDir . '/includes/Admin/Products/List_Products.php',
     'WCPOS\\WooCommercePOS\\Admin\\Products\\Single_Product' => $baseDir . '/includes/Admin/Products/Single_Product.php',
     'WCPOS\\WooCommercePOS\\Admin\\Settings' => $baseDir . '/includes/Admin/Settings.php',
-    'WCPOS\\WooCommercePOS\\Admin\\Templates\\List_Templates' => $baseDir . '/includes/Admin/Templates/List_Templates.php',
     'WCPOS\\WooCommercePOS\\Admin\\Templates\\Single_Template' => $baseDir . '/includes/Admin/Templates/Single_Template.php',
     'WCPOS\\WooCommercePOS\\Deactivator' => $baseDir . '/includes/Deactivator.php',
     'WCPOS\\WooCommercePOS\\Emails' => $baseDir . '/includes/Emails.php',
