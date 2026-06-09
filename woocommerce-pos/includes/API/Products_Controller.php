@@ -58,6 +58,13 @@ class Products_Controller extends WC_REST_Products_Controller {
 	protected $wcpos_request;
 
 	/**
+	 * Memoized parent collection params.
+	 *
+	 * @var array|null
+	 */
+	protected $wcpos_parent_collection_params = null;
+
+	/**
 	 * Dispatch request to parent controller, or override if needed.
 	 *
 	 * @param mixed           $dispatch_result Dispatch result, will be used if not empty.
@@ -131,11 +138,49 @@ class Products_Controller extends WC_REST_Products_Controller {
 	 * @return array $params The collection parameters.
 	 */
 	public function get_collection_params() {
-		$params = parent::get_collection_params();
+		$params = $this->wcpos_get_parent_collection_params();
 
 		// Check if 'per_page' parameter exists and has a 'minimum' key before modifying.
 		if ( isset( $params['per_page'] ) && \is_array( $params['per_page'] ) ) {
 			$params['per_page']['minimum'] = -1;
+		}
+
+		if ( ! $this->wcpos_parent_collection_supports_param( 'brand' ) ) {
+			$params['brand'] = array(
+				'description'       => /* translators: REST API collection parameter description. */ __( 'Limit result set to products assigned to brand IDs or slugs, separated by commas.', 'woocommerce-pos' ),
+				'type'              => 'string',
+				'validate_callback' => 'rest_validate_request_arg',
+			);
+		}
+
+		if ( ! $this->wcpos_parent_collection_supports_param( 'brand_operator' ) ) {
+			$params['brand_operator'] = array(
+				'description'       => /* translators: REST API collection parameter description. */ __( 'Operator to compare product brand terms.', 'woocommerce-pos' ),
+				'type'              => 'string',
+				'enum'              => array( 'in', 'not_in', 'and' ),
+				'default'           => 'in',
+				'validate_callback' => 'rest_validate_request_arg',
+			);
+		}
+
+		if ( ! $this->wcpos_parent_collection_supports_param( 'category_operator' ) ) {
+			$params['category_operator'] = array(
+				'description'       => /* translators: REST API collection parameter description. */ __( 'Operator to compare product category terms.', 'woocommerce-pos' ),
+				'type'              => 'string',
+				'enum'              => array( 'in', 'not_in', 'and' ),
+				'default'           => 'in',
+				'validate_callback' => 'rest_validate_request_arg',
+			);
+		}
+
+		if ( ! $this->wcpos_parent_collection_supports_param( 'tag_operator' ) ) {
+			$params['tag_operator'] = array(
+				'description'       => /* translators: REST API collection parameter description. */ __( 'Operator to compare product tag terms.', 'woocommerce-pos' ),
+				'type'              => 'string',
+				'enum'              => array( 'in', 'not_in', 'and' ),
+				'default'           => 'in',
+				'validate_callback' => 'rest_validate_request_arg',
+			);
 		}
 
 		// Ensure 'orderby' is set and is an array before attempting to modify it.
@@ -192,46 +237,7 @@ class Products_Controller extends WC_REST_Products_Controller {
 		 * @TODO - only need to update if there is a change
 		 */
 		if ( $product->is_type( 'variable' ) && $product instanceof WC_Product_Variable ) {
-			// Build sale_price range from only variations that are genuinely on sale.
-			// WC's get_variation_prices()['sale_price'] stores the regular price for
-			// non-sale variations, so we compare against regular_price to identify true sales.
-			$all_variation_prices = $product->get_variation_prices();
-			$sale_prices          = array();
-			foreach ( $all_variation_prices['sale_price'] as $variation_id => $sale_price ) {
-				if ( isset( $all_variation_prices['regular_price'][ $variation_id ] )
-					&& $sale_price !== $all_variation_prices['regular_price'][ $variation_id ] ) {
-					$sale_prices[ $variation_id ] = $sale_price;
-				}
-			}
-
-			$min_sale = ! empty( $sale_prices ) ? min( $sale_prices ) : '';
-			$max_sale = ! empty( $sale_prices ) ? max( $sale_prices ) : '';
-
-			// Apply WooCommerce filter so pricing/currency extensions can adjust the values.
-			if ( '' !== $min_sale ) {
-				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- intentionally invoking WC core filter.
-				$min_sale = apply_filters( 'woocommerce_get_variation_sale_price', $min_sale, $product, 'min', false );
-			}
-			if ( '' !== $max_sale ) {
-				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- intentionally invoking WC core filter.
-				$max_sale = apply_filters( 'woocommerce_get_variation_sale_price', $max_sale, $product, 'max', false );
-			}
-
-			// Initialize price variables.
-			$price_array = array(
-				'price'         => array(
-					'min' => $product->get_variation_price(),
-					'max' => $product->get_variation_price( 'max' ),
-				),
-				'regular_price' => array(
-					'min' => $product->get_variation_regular_price(),
-					'max' => $product->get_variation_regular_price( 'max' ),
-				),
-				'sale_price'    => array(
-					'min' => $min_sale,
-					'max' => $max_sale,
-				),
-			);
+			$price_array = $this->wcpos_get_variable_product_price_ranges( $product );
 
 			// Try encoding the array into JSON.
 			$encoded_price = wp_json_encode( $price_array );
@@ -256,6 +262,159 @@ class Products_Controller extends WC_REST_Products_Controller {
 		$response->set_data( $data );
 
 		return $response;
+	}
+
+	/**
+	 * Build variable product price ranges from current variation data.
+	 *
+	 * WooCommerce caches variable product price ranges in a parent-product transient.
+	 * If a variation price changes without that parent cache being refreshed, the POS
+	 * listing response can keep serving stale parent prices. Read the visible child
+	 * variations directly for WCPOS response metadata so the listing reflects the
+	 * current variation prices used by variation selection and cart flows.
+	 *
+	 * @param WC_Product_Variable $product Variable product.
+	 *
+	 * @return array{price: array{min: string, max: string}, regular_price: array{min: string, max: string},
+	 *               sale_price: array{min: string, max: string}}
+	 */
+	private function wcpos_get_variable_product_price_ranges( WC_Product_Variable $product ): array {
+		$prices = array(
+			'price'         => array(),
+			'regular_price' => array(),
+			'sale_price'    => array(),
+		);
+
+		$price_decimals = wc_get_price_decimals();
+
+		foreach ( $product->get_visible_children() as $variation_id ) {
+			$variation = wc_get_product( $variation_id );
+
+			if ( ! $variation ) {
+				continue;
+			}
+
+			$price = apply_filters(
+				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- intentionally invoking WC core filter.
+				'woocommerce_variation_prices_price',
+				$variation->get_price( 'edit' ),
+				$variation,
+				$product
+			);
+
+			if ( '' === $price ) {
+				continue;
+			}
+
+			$regular_price = apply_filters(
+				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- intentionally invoking WC core filter.
+				'woocommerce_variation_prices_regular_price',
+				$variation->get_regular_price( 'edit' ),
+				$variation,
+				$product
+			);
+			$sale_price = apply_filters(
+				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- intentionally invoking WC core filter.
+				'woocommerce_variation_prices_sale_price',
+				$variation->get_sale_price( 'edit' ),
+				$variation,
+				$product
+			);
+
+			$formatted_price         = wc_format_decimal( $price, $price_decimals );
+			$formatted_regular_price = wc_format_decimal( $regular_price, $price_decimals );
+			$formatted_sale_price    = wc_format_decimal( $sale_price, $price_decimals );
+
+			$prices['price'][ $variation_id ]         = $formatted_price;
+			$prices['regular_price'][ $variation_id ] = $formatted_regular_price;
+
+			if ( '' !== $sale_price
+				&& $formatted_sale_price !== $formatted_regular_price
+				&& $formatted_sale_price === $formatted_price ) {
+				$prices['sale_price'][ $variation_id ] = $formatted_sale_price;
+			}
+		}
+
+		foreach ( $prices as $key => $values ) {
+			asort( $values, SORT_NUMERIC );
+			$prices[ $key ] = $values;
+		}
+
+		$price_range         = $this->wcpos_get_min_max_price_range( $prices['price'] );
+		$regular_price_range = $this->wcpos_get_min_max_price_range( $prices['regular_price'] );
+		$sale_price_range    = $this->wcpos_get_min_max_price_range( $prices['sale_price'] );
+
+		return array(
+			'price'         => $this->wcpos_apply_variable_product_price_range_filter(
+				'woocommerce_get_variation_price',
+				$price_range,
+				$product
+			),
+			'regular_price' => $this->wcpos_apply_variable_product_price_range_filter(
+				'woocommerce_get_variation_regular_price',
+				$regular_price_range,
+				$product
+			),
+			'sale_price'    => $this->wcpos_apply_variable_product_price_range_filter(
+				'woocommerce_get_variation_sale_price',
+				$sale_price_range,
+				$product
+			),
+		);
+	}
+
+	/**
+	 * Apply WooCommerce variable product min/max price filters to a calculated range.
+	 *
+	 * @param string                          $hook_name WooCommerce price range filter name.
+	 * @param array{min: string, max: string} $price_range Price range.
+	 * @param WC_Product_Variable             $product Variable product.
+	 *
+	 * @return array{min: string, max: string}
+	 */
+	private function wcpos_apply_variable_product_price_range_filter( string $hook_name, array $price_range, WC_Product_Variable $product ): array {
+		if ( '' !== $price_range['min'] ) {
+			$price_range['min'] = (string) apply_filters(
+				$hook_name,
+				$price_range['min'],
+				$product,
+				'min',
+				false
+			);
+		}
+
+		if ( '' !== $price_range['max'] ) {
+			$price_range['max'] = (string) apply_filters(
+				$hook_name,
+				$price_range['max'],
+				$product,
+				'max',
+				false
+			);
+		}
+
+		return $price_range;
+	}
+
+	/**
+	 * Convert a variation price list to a min/max range.
+	 *
+	 * @param array<int,string> $prices Prices keyed by variation ID.
+	 *
+	 * @return array{min: string, max: string}
+	 */
+	private function wcpos_get_min_max_price_range( array $prices ): array {
+		if ( empty( $prices ) ) {
+			return array(
+				'min' => '',
+				'max' => '',
+			);
+		}
+
+		return array(
+			'min' => (string) reset( $prices ),
+			'max' => (string) end( $prices ),
+		);
 	}
 
 	/**
@@ -396,6 +555,157 @@ class Products_Controller extends WC_REST_Products_Controller {
 		}
 
 		return $args;
+	}
+
+	/**
+	 * Check whether the parent WooCommerce REST controller already supports a collection param.
+	 *
+	 * If WooCommerce adds native REST support for Store API-style product filters, WCPOS
+	 * should defer to the parent implementation instead of adding duplicate tax queries.
+	 *
+	 * @param string $param Collection parameter name.
+	 *
+	 * @return bool
+	 */
+	protected function wcpos_parent_collection_supports_param( string $param ): bool {
+		$params = $this->wcpos_get_parent_collection_params();
+
+		return isset( $params[ $param ] );
+	}
+
+	/**
+	 * Get parent collection params once per controller instance.
+	 *
+	 * @return array
+	 */
+	protected function wcpos_get_parent_collection_params(): array {
+		if ( null === $this->wcpos_parent_collection_params ) {
+			$this->wcpos_parent_collection_params = parent::get_collection_params();
+		}
+
+		return $this->wcpos_parent_collection_params;
+	}
+
+	/**
+	 * Parse one or more taxonomy terms from a Store API-style request parameter.
+	 *
+	 * @param WP_REST_Request $request The request used.
+	 * @param string          $param   Request parameter name.
+	 *
+	 * @return array{field?:string,terms?:array<int,int|string>}
+	 */
+	protected function wcpos_get_store_api_tax_terms_from_request( WP_REST_Request $request, string $param ): array {
+		$value = $request->get_param( $param );
+
+		if ( empty( $value ) ) {
+			return array();
+		}
+
+		$terms = array_filter( array_map( 'trim', explode( ',', (string) $value ) ) );
+		if ( empty( $terms ) ) {
+			return array();
+		}
+
+		$ids = wp_parse_id_list( $terms );
+		if ( \count( $ids ) === \count( $terms ) ) {
+			return array(
+				'field' => 'term_id',
+				'terms' => $ids,
+			);
+		}
+
+		return array(
+			'field' => 'slug',
+			'terms' => $terms,
+		);
+	}
+
+	/**
+	 * Convert Store API-style taxonomy operators to WP_Query tax query operators.
+	 *
+	 * @param string|null $operator Store API taxonomy operator.
+	 *
+	 * @return string
+	 */
+	protected function wcpos_get_store_api_tax_operator( ?string $operator ): string {
+		$operators = array(
+			'and'    => 'AND',
+			'in'     => 'IN',
+			'not_in' => 'NOT IN',
+		);
+
+		return $operators[ $operator ?? 'in' ] ?? 'IN';
+	}
+
+	/**
+	 * Apply Store API taxonomy fallback query behavior for params missing in Woo REST.
+	 *
+	 * @param array           $args    Prepared query args.
+	 * @param WP_REST_Request $request The request used.
+	 *
+	 * @return array
+	 */
+	protected function wcpos_apply_store_api_tax_operator_fallbacks( array $args, WP_REST_Request $request ): array {
+		if ( ! $this->wcpos_parent_collection_supports_param( 'brand' ) ) {
+			$brand_terms = $this->wcpos_get_store_api_tax_terms_from_request( $request, 'brand' );
+			if ( isset( $brand_terms['field'], $brand_terms['terms'] ) && taxonomy_exists( 'product_brand' ) ) {
+				if ( ! isset( $args['tax_query'] ) || ! \is_array( $args['tax_query'] ) ) {
+					$args['tax_query'] = array();
+				}
+
+				$args['tax_query'][] = array(
+					'taxonomy' => 'product_brand',
+					'field'    => $brand_terms['field'],
+					'terms'    => $brand_terms['terms'],
+					'operator' => $this->wcpos_get_store_api_tax_operator( $request->get_param( 'brand_operator' ) ),
+				);
+			}
+		}
+
+		$operator_fallbacks = array(
+			'category_operator' => 'product_cat',
+			'tag_operator'      => 'product_tag',
+		);
+		$query_params       = $request->get_query_params();
+
+		foreach ( $operator_fallbacks as $param => $taxonomy ) {
+			if ( $this->wcpos_parent_collection_supports_param( $param ) || ! array_key_exists( $param, $query_params ) ) {
+				continue;
+			}
+
+			if ( ! isset( $args['tax_query'] ) || ! \is_array( $args['tax_query'] ) ) {
+				continue;
+			}
+
+			$args['tax_query'] = $this->wcpos_replace_tax_query_operator_for_taxonomy(
+				$args['tax_query'],
+				$taxonomy,
+				$this->wcpos_get_store_api_tax_operator( $request->get_param( $param ) )
+			);
+		}
+
+		return $args;
+	}
+
+	/**
+	 * Replace a tax query clause operator for one taxonomy.
+	 *
+	 * @param array  $tax_query Tax query clauses.
+	 * @param string $taxonomy  Taxonomy to match.
+	 * @param string $operator  WP_Tax_Query operator.
+	 *
+	 * @return array
+	 */
+	protected function wcpos_replace_tax_query_operator_for_taxonomy( array $tax_query, string $taxonomy, string $operator ): array {
+		foreach ( $tax_query as $key => $clause ) {
+			if ( ! \is_array( $clause ) || ! isset( $clause['taxonomy'] ) || $taxonomy !== $clause['taxonomy'] ) {
+				continue;
+			}
+
+			$tax_query[ $key ]['operator'] = $operator;
+		}
+
+		return $tax_query;
 	}
 
 	/**
@@ -569,6 +879,7 @@ class Products_Controller extends WC_REST_Products_Controller {
 	 */
 	protected function prepare_objects_query( $request ) {
 		$args          = parent::prepare_objects_query( $request );
+		$args          = $this->wcpos_apply_store_api_tax_operator_fallbacks( $args, $request );
 		$barcode_field = $this->wcpos_get_barcode_field();
 
 		// Add custom 'orderby' options.
