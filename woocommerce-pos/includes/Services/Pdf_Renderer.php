@@ -3,9 +3,10 @@
  * Renders HTML to PDF bytes via the prefixed Dompdf library.
  *
  * Thin wrapper around WCPOS\Vendor\Dompdf\Dompdf. Remote/PHP/JS are disabled for
- * safety (images must be embedded as data URIs); Dompdf's writable font cache and
- * temp dir are pointed at a WCPOS-owned subdirectory of the system temp so nothing
- * is written into the read-only, committed vendor_prefixed/ tree.
+ * safety; local WordPress/plugin images are embedded as data URIs before Dompdf
+ * sees the HTML. Dompdf's writable font cache and temp dir are pointed at a
+ * WCPOS-owned subdirectory of the system temp so nothing is written into the
+ * read-only, committed vendor_prefixed/ tree.
  *
  * @package WCPOS\WooCommercePOS\Services
  */
@@ -35,35 +36,47 @@ class Pdf_Renderer {
 	private const FIT_HEIGHT_SEARCH_STEPS = 18;
 
 	/**
-	 * Dompdf flex/grid compatibility stylesheet.
+	 * Inline flex/grid compatibility stylesheet for full-document receipts.
 	 *
-	 * Dompdf has no CSS Flexbox or Grid layout engine — it silently maps
-	 * `display:flex` and `display:grid` to `block`, which collapses receipt
-	 * rows built as columns (labels and values run together, multi-column
-	 * blocks stack vertically). This stylesheet re-expresses those containers
-	 * as tables, which Dompdf lays out correctly, so the downloaded PDF matches
-	 * the on-screen receipt. It targets both inline-style flex/grid (thermal
-	 * emitter output and the HTML gallery templates) and the class-based flex
-	 * used by the bundled legacy receipt template. `!important` is required to
-	 * win over the templates' inline `display` declarations.
-	 *
-	 * Injected only into the PDF render path; gallery templates and live
-	 * previews are never modified.
+	 * Fragment receipts use Pdf_Layout_Preprocessor to rewrite inline flex/grid
+	 * into real tables, but full documents bypass that DOM pass to preserve
+	 * their existing <head>. These rules preserve the preprocessor-era support
+	 * for custom legacy/Template Studio documents that use inline flex/grid.
 	 */
-	private const FLEX_GRID_SHIM = '<style>'
-		// 1. Multi-column LAYOUT containers (header, footer, page grids) become a
-		// single-level table. Leaf label/value rows are handled by rule 2 instead
-		// of nesting, because stacked anonymous tables crash Dompdf's cellmap.
+	private const INLINE_FLEX_GRID_SHIM = '<style>'
 		. '[style*="display: flex"],[style*="display:flex"],'
 		. '[style*="display: grid"],[style*="display:grid"]'
 		. '{display:table !important;width:100% !important;border-spacing:0 !important}'
+		. '[style*="gap: 22px"],[style*="gap:22px"]'
+		. '{border-collapse:separate !important;border-spacing:22px 0 !important}'
+		. '[style*="gap: 24px"],[style*="gap:24px"]'
+		. '{border-collapse:separate !important;border-spacing:24px 0 !important}'
+		. '[style*="gap: 28px"],[style*="gap:28px"]'
+		. '{border-collapse:separate !important;border-spacing:28px 0 !important}'
 		. '[style*="display: flex"]>*,[style*="display:flex"]>*,'
 		. '[style*="display: grid"]>*,[style*="display:grid"]>*'
 		. '{display:table-cell !important;vertical-align:top !important}'
-		// 2. Label/value rows (justify-content:space-between) stay block-level and
-		// float the value to the right edge — no nested table. These rules are
-		// declared after rule 1, so they win the cascade at equal specificity (and
-		// the :last-child rule is also higher specificity).
+		. '[style*="flex: 0 0 auto"],[style*="flex:0 0 auto"]'
+		. '{width:1% !important;white-space:nowrap !important}'
+		. '[style*="flex: 0 0 92px"],[style*="flex:0 0 92px"]'
+		. '{width:92px !important}'
+		. '[style*="flex: 0 0 280px"],[style*="flex:0 0 280px"]'
+		. '{width:280px !important}'
+		. '[style*="grid-template-columns: 1fr 220px"]>*:last-child,'
+		. '[style*="grid-template-columns:1fr 220px"]>*:last-child'
+		. '{width:220px !important}'
+		. '[style*="grid-template-columns: 1fr 320px"]>*:last-child,'
+		. '[style*="grid-template-columns:1fr 320px"]>*:last-child'
+		. '{width:320px !important}'
+		. '[style*="grid-template-columns: 2fr 1fr"]>*:first-child,'
+		. '[style*="grid-template-columns:2fr 1fr"]>*:first-child'
+		. '{width:66.666% !important}'
+		. '[style*="grid-template-columns: 2fr 1fr"]>*:last-child,'
+		. '[style*="grid-template-columns:2fr 1fr"]>*:last-child'
+		. '{width:33.333% !important}'
+		. '[style*="grid-template-columns: 1fr 1fr 1fr"]>*,'
+		. '[style*="grid-template-columns:1fr 1fr 1fr"]>*'
+		. '{width:33.333% !important}'
 		. '[style*="justify-content: space-between"],[style*="justify-content:space-between"]'
 		. '{display:block !important;width:auto !important}'
 		. '[style*="justify-content: space-between"]>*,[style*="justify-content:space-between"]>*'
@@ -71,14 +84,22 @@ class Pdf_Renderer {
 		. '[style*="justify-content: space-between"]>*:last-child,'
 		. '[style*="justify-content:space-between"]>*:last-child'
 		. '{display:block !important;float:right !important;text-align:right !important}'
-		// 3. flex-end wrappers (e.g. the order barcode) right-align their child
-		// without a table, so they do not nest inside a grid cell table.
 		. '[style*="justify-content: flex-end"],[style*="justify-content:flex-end"]'
 		. '{display:block !important;width:auto !important;text-align:right !important}'
 		. '[style*="justify-content: flex-end"]>*,[style*="justify-content:flex-end"]>*'
 		. '{display:inline-block !important}'
-		// 4. Legacy receipt.php uses class-based flex. Header is a layout table;
-		// totals/payment rows use the same float-the-value approach as rule 2.
+		. '</style>';
+
+	/**
+	 * Legacy-template flex compatibility stylesheet.
+	 *
+	 * Inline-style flex/grid containers are rewritten into real tables by
+	 * Pdf_Layout_Preprocessor, but the bundled legacy receipt.php template uses
+	 * class-based flex from its own embedded stylesheet, which the DOM
+	 * preprocessor leaves alone. These rules re-express those known classes as
+	 * tables/floats. `!important` wins over the template's stylesheet.
+	 */
+	private const LEGACY_FLEX_SHIM = '<style>'
 		. '.receipt-header{display:table !important;width:100% !important;border-spacing:0 !important}'
 		. '.receipt-header>*{display:table-cell !important;vertical-align:top !important}'
 		. '.totals-row,.payment-row,.payment-sub,.card .row'
@@ -95,17 +116,13 @@ class Pdf_Renderer {
 	 * @param string $html HTML document to render.
 	 * @param array  $opts Optional: 'paper' (size name or [x0,y0,x1,y1]), 'orientation'
 	 *                     ('portrait'|'landscape'), 'default_font', 'fit_height',
-	 *                     'flex_grid_shim' (inject the receipt flex/grid compat CSS).
+	 *                     'receipt_layout' (rewrite receipt flex/grid markup for Dompdf
+	 *                     and lift the root padding into @page margins).
 	 *
 	 * @return string The PDF document bytes (begins with '%PDF-').
 	 */
 	public function render_html( string $html, array $opts = array() ): string {
-		// Opt-in: the shim encodes receipt-layout knowledge (including legacy
-		// template class names), so it is only applied when the caller asks for it
-		// (receipt rendering) rather than for every generic HTML document.
-		if ( ! empty( $opts['flex_grid_shim'] ) ) {
-			$html = $this->inject_flex_grid_shim( $html );
-		}
+		$html = $this->prepare_html_for_render( $html, $opts );
 
 		$paper = isset( $opts['paper'] ) ? $opts['paper'] : 'A4';
 		if ( ! empty( $opts['fit_height'] ) && \is_array( $paper ) ) {
@@ -116,24 +133,295 @@ class Pdf_Renderer {
 	}
 
 	/**
-	 * Prepend the flex/grid compatibility stylesheet to the receipt HTML.
+	 * Prepare receipt HTML for Dompdf's locked-down render environment.
+	 *
+	 * @param string $html HTML document to render.
+	 * @param array  $opts Render options.
+	 *
+	 * @return string Prepared HTML.
+	 */
+	private function prepare_html_for_render( string $html, array $opts ): string {
+		// Opt-in: the rewrite encodes receipt-layout knowledge (including legacy
+		// template class names), so it is only applied when the caller asks for it
+		// (receipt rendering) rather than for every generic HTML document.
+		if ( ! empty( $opts['receipt_layout'] ) ) {
+			if ( false !== stripos( $html, '</head>' ) ) {
+				// Full HTML documents (the legacy-php receipt template) carry
+				// their stylesheet and charset in <head>; the fragment-oriented
+				// preprocessor would discard them, so they get CSS shims and keep
+				// Dompdf's default page margins, exactly as before the
+				// preprocessor existed.
+				$html = $this->inject_head_styles( $html, self::INLINE_FLEX_GRID_SHIM . self::LEGACY_FLEX_SHIM );
+			} else {
+				$preprocessor = new Pdf_Layout_Preprocessor();
+				$html         = $preprocessor->process( $html );
+
+				// Match the browser preview: the template's own root padding is
+				// the only whitespace around the receipt, so it replaces Dompdf's
+				// default 1.2cm page margin (and keeps later pages consistent
+				// with page one).
+				$margins = $preprocessor->get_page_margins_pt();
+
+				$page_style = '<style>@page { margin: '
+					. implode(
+						' ',
+						array_map(
+							static function ( float $pt ): string {
+								return self::css_number( $pt ) . 'pt';
+							},
+							$margins
+						)
+					)
+					. '; } body { margin: 0; padding: 0; }</style>';
+
+				// Receipts are UTF-8 fragments with no charset declaration;
+				// without one Dompdf sniffs the encoding and mostly-ASCII
+				// receipts with a stray multibyte character (e.g. an em dash)
+				// get mis-decoded.
+				$charset_meta = '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">';
+
+				$html = $this->inject_head_styles( $html, $charset_meta . $page_style . self::LEGACY_FLEX_SHIM );
+			}
+		}
+
+		return $this->embed_local_images( $html );
+	}
+
+	/**
+	 * Format a float for CSS output, immune to LC_NUMERIC comma locales.
+	 *
+	 * @param float $value The value to format.
+	 *
+	 * @return string The formatted number.
+	 */
+	private static function css_number( float $value ): string {
+		$formatted = rtrim( rtrim( number_format( $value, 2, '.', '' ), '0' ), '.' );
+
+		return '' === $formatted ? '0' : $formatted;
+	}
+
+	/**
+	 * Prepend compatibility stylesheets to the receipt HTML.
 	 *
 	 * Inserted just before `</head>` when the HTML is a full document, otherwise
 	 * prepended to the fragment (Dompdf wraps loose markup in html/body itself).
 	 * Placing the stylesheet last in the head lets its `!important` rules win the
 	 * cascade over template styles.
 	 *
-	 * @param string $html The receipt HTML.
+	 * @param string $html   The receipt HTML.
+	 * @param string $styles The <style> block(s) to inject.
 	 *
-	 * @return string The HTML with the compatibility stylesheet injected.
+	 * @return string The HTML with the stylesheets injected.
 	 */
-	private function inject_flex_grid_shim( string $html ): string {
+	private function inject_head_styles( string $html, string $styles ): string {
 		$head_close = stripos( $html, '</head>' );
 		if ( false !== $head_close ) {
-			return substr_replace( $html, self::FLEX_GRID_SHIM, $head_close, 0 );
+			return substr_replace( $html, $styles, $head_close, 0 );
 		}
 
-		return self::FLEX_GRID_SHIM . $html;
+		return $styles . $html;
+	}
+
+	/**
+	 * Embed local WordPress image URLs as data URIs.
+	 *
+	 * Dompdf remote loading and local file access are intentionally disabled, so
+	 * receipt logos and bundled assets must be inlined. Only URLs that resolve to
+	 * known local WordPress/plugin paths are embedded; external URLs are left
+	 * untouched.
+	 *
+	 * @param string $html HTML document.
+	 *
+	 * @return string HTML with local image sources embedded.
+	 */
+	private function embed_local_images( string $html ): string {
+		return (string) preg_replace_callback(
+			'/(<img\b[^>]*\bsrc\s*=\s*["\'])([^"\']+)(["\'][^>]*>)/i',
+			function ( array $matches ): string {
+				$data_uri = $this->image_src_to_data_uri( html_entity_decode( $matches[2], ENT_QUOTES, 'UTF-8' ) );
+				if ( null === $data_uri ) {
+					return $matches[0];
+				}
+
+				return $matches[1] . esc_attr( $data_uri ) . $matches[3];
+			},
+			$html
+		);
+	}
+
+	/**
+	 * Convert a local image source to a data URI.
+	 *
+	 * @param string $src Image source.
+	 *
+	 * @return string|null Data URI, or null when the source is not embeddable.
+	 */
+	private function image_src_to_data_uri( string $src ): ?string {
+		if ( '' === $src || 0 === strpos( $src, 'data:' ) ) {
+			return null;
+		}
+
+		$path = $this->local_image_path_from_src( $src );
+		if ( null === $path || ! is_readable( $path ) || ! is_file( $path ) ) {
+			return null;
+		}
+
+		$bytes = file_get_contents( $path );
+		if ( false === $bytes || '' === $bytes ) {
+			return null;
+		}
+
+		$mime = $this->image_mime_type( $path );
+		if ( null === $mime ) {
+			return null;
+		}
+
+		return 'data:' . $mime . ';base64,' . base64_encode( $bytes );
+	}
+
+	/**
+	 * Resolve an image src to a safe local filesystem path.
+	 *
+	 * @param string $src Image source.
+	 *
+	 * @return string|null Local path, or null when the src is external/unknown.
+	 */
+	private function local_image_path_from_src( string $src ): ?string {
+		$src = trim( $src );
+		$src = explode( '#', $src, 2 )[0];
+		$src = explode( '?', $src, 2 )[0];
+
+		if ( 0 === strpos( $src, '/' ) && 0 !== strpos( $src, '//' ) && \defined( 'ABSPATH' ) ) {
+			$path = wp_normalize_path( ABSPATH . ltrim( $src, '/' ) );
+			return $this->is_allowed_local_image_path( $path ) ? $path : null;
+		}
+
+		$mappings = $this->local_url_path_mappings();
+		foreach ( $mappings as $url_base => $path_base ) {
+			if ( 0 !== strpos( $src, $url_base ) ) {
+				continue;
+			}
+
+			$relative = ltrim( substr( $src, \strlen( $url_base ) ), '/\\' );
+			$path     = wp_normalize_path( trailingslashit( $path_base ) . $relative );
+
+			return $this->is_allowed_local_image_path( $path ) ? $path : null;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Build URL-to-path mappings for local WordPress assets.
+	 *
+	 * @return array<string,string>
+	 */
+	private function local_url_path_mappings(): array {
+		$uploads = wp_upload_dir();
+		$plugin  = dirname( __DIR__, 2 );
+
+		$mappings = array(
+			$uploads['baseurl']                                => $uploads['basedir'],
+			content_url()                                      => \defined( 'WP_CONTENT_DIR' ) ? WP_CONTENT_DIR : '',
+			plugins_url( '', $plugin . '/woocommerce-pos.php' ) => $plugin,
+		);
+
+		$normalized = array();
+		foreach ( $mappings as $url => $path ) {
+			if ( '' === $url || '' === $path ) {
+				continue;
+			}
+
+			$normalized[ trailingslashit( $url ) ] = wp_normalize_path( $path );
+		}
+
+		uksort(
+			$normalized,
+			static function ( string $a, string $b ): int {
+				return \strlen( $b ) <=> \strlen( $a );
+			}
+		);
+
+		return $normalized;
+	}
+
+	/**
+	 * Check that a resolved path stays within known local asset roots.
+	 *
+	 * @param string $path Resolved path.
+	 *
+	 * @return bool
+	 */
+	private function is_allowed_local_image_path( string $path ): bool {
+		$real_path = realpath( $path );
+		if ( false === $real_path ) {
+			return false;
+		}
+
+		$real_path = wp_normalize_path( $real_path );
+		foreach ( $this->allowed_local_image_roots() as $root ) {
+			if ( 0 === strpos( $real_path, trailingslashit( $root ) ) || $real_path === $root ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Allowed local image roots.
+	 *
+	 * @return string[]
+	 */
+	private function allowed_local_image_roots(): array {
+		$uploads = wp_upload_dir();
+		$roots   = array(
+			$uploads['basedir'],
+			\defined( 'WP_CONTENT_DIR' ) ? WP_CONTENT_DIR : '',
+			dirname( __DIR__, 2 ),
+		);
+
+		return array_values(
+			array_filter(
+				array_map(
+					static function ( string $root ): string {
+						$real = realpath( $root );
+						return false === $real ? '' : wp_normalize_path( $real );
+					},
+					$roots
+				)
+			)
+		);
+	}
+
+	/**
+	 * Determine a supported image MIME type from path.
+	 *
+	 * @param string $path Local image path.
+	 *
+	 * @return string|null MIME type.
+	 */
+	private function image_mime_type( string $path ): ?string {
+		$type = wp_check_filetype( $path );
+		$mime = false !== $type['type'] ? (string) $type['type'] : '';
+
+		if ( '' === $mime ) {
+			$extension = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+			$mime      = array(
+				'gif'  => 'image/gif',
+				'jpg'  => 'image/jpeg',
+				'jpeg' => 'image/jpeg',
+				'png'  => 'image/png',
+				'svg'  => 'image/svg+xml',
+				'webp' => 'image/webp',
+			)[ $extension ] ?? '';
+		}
+
+		if ( 0 !== strpos( $mime, 'image/' ) ) {
+			return null;
+		}
+
+		return $mime;
 	}
 
 	/**

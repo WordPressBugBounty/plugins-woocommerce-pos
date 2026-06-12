@@ -322,6 +322,7 @@ return array(
     'WCPOS\\WooCommercePOS\\Services\\Landing_Profile' => $baseDir . '/includes/Services/Landing_Profile.php',
     'WCPOS\\WooCommercePOS\\Services\\Meta_Data_Repair' => $baseDir . '/includes/Services/Meta_Data_Repair.php',
     'WCPOS\\WooCommercePOS\\Services\\Opening_Hours_Formatter' => $baseDir . '/includes/Services/Opening_Hours_Formatter.php',
+    'WCPOS\\WooCommercePOS\\Services\\Pdf_Layout_Preprocessor' => $baseDir . '/includes/Services/Pdf_Layout_Preprocessor.php',
     'WCPOS\\WooCommercePOS\\Services\\Pdf_Renderer' => $baseDir . '/includes/Services/Pdf_Renderer.php',
     'WCPOS\\WooCommercePOS\\Services\\Preview_Receipt_Builder' => $baseDir . '/includes/Services/Preview_Receipt_Builder.php',
     'WCPOS\\WooCommercePOS\\Services\\PrintNode_Client' => $baseDir . '/includes/Services/PrintNode_Client.php',

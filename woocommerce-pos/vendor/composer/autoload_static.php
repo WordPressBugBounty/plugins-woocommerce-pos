@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInit1cafcc5a093117d77146e883ba167760
+class ComposerStaticInitbb022a644282709c2831dc8fef1feefa
 {
     public static $files = array (
         '23c18046f52bef3eea034657bafda50f' => __DIR__ . '/..' . '/symfony/polyfill-php81/bootstrap.php',
@@ -401,6 +401,7 @@ class ComposerStaticInit1cafcc5a093117d77146e883ba167760
         'WCPOS\\WooCommercePOS\\Services\\Landing_Profile' => __DIR__ . '/../..' . '/includes/Services/Landing_Profile.php',
         'WCPOS\\WooCommercePOS\\Services\\Meta_Data_Repair' => __DIR__ . '/../..' . '/includes/Services/Meta_Data_Repair.php',
         'WCPOS\\WooCommercePOS\\Services\\Opening_Hours_Formatter' => __DIR__ . '/../..' . '/includes/Services/Opening_Hours_Formatter.php',
+        'WCPOS\\WooCommercePOS\\Services\\Pdf_Layout_Preprocessor' => __DIR__ . '/../..' . '/includes/Services/Pdf_Layout_Preprocessor.php',
         'WCPOS\\WooCommercePOS\\Services\\Pdf_Renderer' => __DIR__ . '/../..' . '/includes/Services/Pdf_Renderer.php',
         'WCPOS\\WooCommercePOS\\Services\\Preview_Receipt_Builder' => __DIR__ . '/../..' . '/includes/Services/Preview_Receipt_Builder.php',
         'WCPOS\\WooCommercePOS\\Services\\PrintNode_Client' => __DIR__ . '/../..' . '/includes/Services/PrintNode_Client.php',
@@ -459,10 +460,10 @@ class ComposerStaticInit1cafcc5a093117d77146e883ba167760
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInit1cafcc5a093117d77146e883ba167760::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInit1cafcc5a093117d77146e883ba167760::$prefixDirsPsr4;
-            $loader->prefixesPsr0 = ComposerStaticInit1cafcc5a093117d77146e883ba167760::$prefixesPsr0;
-            $loader->classMap = ComposerStaticInit1cafcc5a093117d77146e883ba167760::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInitbb022a644282709c2831dc8fef1feefa::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInitbb022a644282709c2831dc8fef1feefa::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInitbb022a644282709c2831dc8fef1feefa::$prefixesPsr0;
+            $loader->classMap = ComposerStaticInitbb022a644282709c2831dc8fef1feefa::$classMap;
 
         }, null, ClassLoader::class);
     }
