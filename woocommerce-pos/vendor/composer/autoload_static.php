@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInitbb022a644282709c2831dc8fef1feefa
+class ComposerStaticInitce501fb0821950b998ce51595758b3d0
 {
     public static $files = array (
         '23c18046f52bef3eea034657bafda50f' => __DIR__ . '/..' . '/symfony/polyfill-php81/bootstrap.php',
@@ -368,6 +368,7 @@ class ComposerStaticInitbb022a644282709c2831dc8fef1feefa
         'WCPOS\\WooCommercePOS\\Admin\\Products\\Single_Product' => __DIR__ . '/../..' . '/includes/Admin/Products/Single_Product.php',
         'WCPOS\\WooCommercePOS\\Admin\\Settings' => __DIR__ . '/../..' . '/includes/Admin/Settings.php',
         'WCPOS\\WooCommercePOS\\Admin\\Templates\\Single_Template' => __DIR__ . '/../..' . '/includes/Admin/Templates/Single_Template.php',
+        'WCPOS\\WooCommercePOS\\CLI\\Anon_ID_Command' => __DIR__ . '/../..' . '/includes/CLI/Anon_ID_Command.php',
         'WCPOS\\WooCommercePOS\\Deactivator' => __DIR__ . '/../..' . '/includes/Deactivator.php',
         'WCPOS\\WooCommercePOS\\Emails' => __DIR__ . '/../..' . '/includes/Emails.php',
         'WCPOS\\WooCommercePOS\\Form_Handler' => __DIR__ . '/../..' . '/includes/Form_Handler.php',
@@ -389,6 +390,7 @@ class ComposerStaticInitbb022a644282709c2831dc8fef1feefa
         'WCPOS\\WooCommercePOS\\Products' => __DIR__ . '/../..' . '/includes/Products.php',
         'WCPOS\\WooCommercePOS\\Registry' => __DIR__ . '/../..' . '/includes/Registry.php',
         'WCPOS\\WooCommercePOS\\Services\\Analytics' => __DIR__ . '/../..' . '/includes/Services/Analytics.php',
+        'WCPOS\\WooCommercePOS\\Services\\Anon_ID' => __DIR__ . '/../..' . '/includes/Services/Anon_ID.php',
         'WCPOS\\WooCommercePOS\\Services\\Auth' => __DIR__ . '/../..' . '/includes/Services/Auth.php',
         'WCPOS\\WooCommercePOS\\Services\\Cache' => __DIR__ . '/../..' . '/includes/Services/Cache.php',
         'WCPOS\\WooCommercePOS\\Services\\Cashier' => __DIR__ . '/../..' . '/includes/Services/Cashier.php',
@@ -460,10 +462,10 @@ class ComposerStaticInitbb022a644282709c2831dc8fef1feefa
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInitbb022a644282709c2831dc8fef1feefa::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInitbb022a644282709c2831dc8fef1feefa::$prefixDirsPsr4;
-            $loader->prefixesPsr0 = ComposerStaticInitbb022a644282709c2831dc8fef1feefa::$prefixesPsr0;
-            $loader->classMap = ComposerStaticInitbb022a644282709c2831dc8fef1feefa::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInitce501fb0821950b998ce51595758b3d0::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInitce501fb0821950b998ce51595758b3d0::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInitce501fb0821950b998ce51595758b3d0::$prefixesPsr0;
+            $loader->classMap = ComposerStaticInitce501fb0821950b998ce51595758b3d0::$classMap;
 
         }, null, ClassLoader::class);
     }

@@ -3,7 +3,7 @@
  * Plugin Name:       WCPOS – Point of Sale for WooCommerce
  * Plugin URI:        https://wordpress.org/plugins/woocommerce-pos/
  * Description:       A simple front-end for taking WooCommerce orders at the Point of Sale. Requires <a href="http://wordpress.org/plugins/woocommerce/">WooCommerce</a>.
- * Version:           1.9.3
+ * Version:           1.9.4
  * Author:            kilbot
  * Author URI:        http://wcpos.com
  * Text Domain:       woocommerce-pos
@@ -25,10 +25,10 @@ namespace WCPOS\WooCommercePOS;
 
 // Define plugin constants (use define() with checks to avoid conflicts when Pro plugin is active).
 if ( ! \defined( __NAMESPACE__ . '\VERSION' ) ) {
-	\define( __NAMESPACE__ . '\VERSION', '1.9.3' );
+	\define( __NAMESPACE__ . '\VERSION', '1.9.4' );
 }
 if ( ! \defined( __NAMESPACE__ . '\TRANSLATION_VERSION' ) ) {
-	\define( __NAMESPACE__ . '\TRANSLATION_VERSION', '2026.6.2' );
+	\define( __NAMESPACE__ . '\TRANSLATION_VERSION', '2026.6.4' );
 }
 if ( ! \defined( __NAMESPACE__ . '\PLUGIN_NAME' ) ) {
 	\define( __NAMESPACE__ . '\PLUGIN_NAME', 'woocommerce-pos' );
@@ -118,6 +118,10 @@ function wcpos_load_autoloaders(): void { // phpcs:ignore WordPress.NamingConven
 }
 
 wcpos_load_autoloaders();
+
+if ( \defined( 'WP_CLI' ) && WP_CLI ) {
+	\WP_CLI::add_command( 'wcpos anon-id', \WCPOS\WooCommercePOS\CLI\Anon_ID_Command::class );
+}
 
 // Environment variables.
 wcpos_load_env( __DIR__ . '/.env' );
