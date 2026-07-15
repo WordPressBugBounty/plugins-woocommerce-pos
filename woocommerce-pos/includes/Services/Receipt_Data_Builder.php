@@ -219,8 +219,20 @@ class Receipt_Data_Builder {
 			$total_refunded = method_exists( $order, 'get_total_refunded_for_item' )
 				? abs( (float) $order->get_total_refunded_for_item( $item_id ) )
 				: 0.0;
+			$price_convenience = $this->get_line_price_convenience_fields(
+				$item,
+				$order,
+				$display_incl,
+				$qty,
+				$unit_subtotal_incl,
+				$unit_subtotal_excl,
+				$line_subtotal_incl,
+				$line_subtotal_excl,
+				$line_total_incl,
+				$line_total_excl
+			);
 
-			$lines[] = array(
+			$line = array(
 				'key'                => (string) $item_id,
 				'sku'                => $item->get_product() ? $item->get_product()->get_sku() : '',
 				'name'               => $item->get_name(),
@@ -246,6 +258,7 @@ class Receipt_Data_Builder {
 				'meta'               => $this->get_item_meta_pairs( $item ),
 				'attributes'         => $this->get_product_attribute_pairs( $item ),
 			);
+			$lines[] = array_merge( $line, $price_convenience );
 		}
 
 		$shipping = array();
@@ -303,6 +316,60 @@ class Receipt_Data_Builder {
 		$discount_total_tax  = (float) $order->get_discount_tax();
 		$discount_total_incl = $discount_total_excl + $discount_total_tax;
 
+		// Legacy POS lines already include regular-to-selling savings in WooCommerce's
+		// discount total. Add only current-shape savings to total_saved to avoid overlap.
+		$sale_savings_totals = array(
+			'incl' => 0.0,
+			'excl' => 0.0,
+		);
+		$additional_savings  = array(
+			'incl' => 0.0,
+			'excl' => 0.0,
+		);
+		$savings_complete    = array(
+			'incl' => true,
+			'excl' => true,
+		);
+		$price_precision = wc_get_price_decimals();
+		foreach ( $lines as $line ) {
+			foreach ( array( 'incl', 'excl' ) as $basis ) {
+				$key = 'line_savings_' . $basis;
+				if ( ! isset( $line[ $key ] ) || ! is_numeric( $line[ $key ] ) ) {
+					$savings_complete[ $basis ] = false;
+					continue;
+				}
+
+				$line_savings = (float) $line[ $key ];
+				$sale_savings_totals[ $basis ] += $line_savings;
+				if ( empty( $line['savings_in_discounts'] ) ) {
+					$subtotal_key = 'line_subtotal_' . $basis;
+					$selling_key  = 'line_selling_total_' . $basis;
+					if (
+						$line_savings > 0.0
+						&& (
+							! isset( $line[ $subtotal_key ], $line[ $selling_key ] )
+							|| round( abs( (float) $line[ $subtotal_key ] - (float) $line[ $selling_key ] ), $price_precision ) > 0.0
+						)
+					) {
+						$savings_complete[ $basis ] = false;
+						continue;
+					}
+					$additional_savings[ $basis ] += $line_savings;
+				}
+			}
+		}
+
+		$total_saved = array(
+			'incl' => $savings_complete['incl'] ? $discount_total_incl + $additional_savings['incl'] : null,
+			'excl' => $savings_complete['excl'] ? $discount_total_excl + $additional_savings['excl'] : null,
+		);
+		foreach ( array( 'incl', 'excl' ) as $basis ) {
+			if ( ! $savings_complete[ $basis ] ) {
+				$sale_savings_totals[ $basis ] = null;
+			}
+		}
+		$display_basis = $display_incl ? 'incl' : 'excl';
+
 		$subtotal_excl = array_sum( array_column( $lines, 'line_subtotal_excl' ) );
 		$subtotal_incl = array_sum( array_column( $lines, 'line_subtotal_incl' ) );
 
@@ -324,22 +391,29 @@ class Receipt_Data_Builder {
 		$net_total = $refund_total > 0 ? max( 0.0, $total - $refund_total ) : 0.0;
 
 		$totals = array(
-			'subtotal'             => $display_incl ? $subtotal_incl : $subtotal_excl,
-			'subtotal_incl'        => $subtotal_incl,
-			'subtotal_excl'        => $subtotal_excl,
-			'discount_total'       => $display_incl ? $discount_total_incl : $discount_total_excl,
-			'discount_total_incl'  => $discount_total_incl,
-			'discount_total_excl'  => $discount_total_excl,
-			'tax_total'            => $tax_total,
-			'total'          => $display_incl ? $total : $total_excl,
-			'total_incl'     => $total,
-			'total_excl'     => $total_excl,
-			'paid_total'           => $total,
-			'change_total'         => (float) $order->get_meta( '_pos_cash_change' ),
-			'refund_total'         => $refund_total,
-			'net_total'            => $net_total,
-			'total_qty'            => $total_qty,
-			'line_count'           => $line_count,
+			'subtotal'                => $display_incl ? $subtotal_incl : $subtotal_excl,
+			'subtotal_incl'           => $subtotal_incl,
+			'subtotal_excl'           => $subtotal_excl,
+			'discount_total'          => $display_incl ? $discount_total_incl : $discount_total_excl,
+			'discount_total_incl'     => $discount_total_incl,
+			'discount_total_excl'     => $discount_total_excl,
+			'sale_savings_total'      => $sale_savings_totals[ $display_basis ],
+			'sale_savings_total_incl' => $sale_savings_totals['incl'],
+			'sale_savings_total_excl' => $sale_savings_totals['excl'],
+			'total_saved'             => $total_saved[ $display_basis ],
+			'total_saved_incl'        => $total_saved['incl'],
+			'total_saved_excl'        => $total_saved['excl'],
+			'total_saved_complete'    => $savings_complete[ $display_basis ],
+			'tax_total'               => $tax_total,
+			'total'                   => $display_incl ? $total : $total_excl,
+			'total_incl'              => $total,
+			'total_excl'              => $total_excl,
+			'paid_total'              => $total,
+			'change_total'            => (float) $order->get_meta( '_pos_cash_change' ),
+			'refund_total'            => $refund_total,
+			'net_total'               => $net_total,
+			'total_qty'               => $total_qty,
+			'line_count'              => $line_count,
 		);
 
 		$payments = array(
@@ -391,6 +465,216 @@ class Receipt_Data_Builder {
 		);
 	}
 
+
+	/**
+	 * Read the recorded POS prices needed for historical receipt savings.
+	 *
+	 * @param \WC_Order_Item_Product $item Order item.
+	 *
+	 * @return array{price:float,regular_price:float,tax_status:string}|null
+	 */
+	private function get_pos_price_data( \WC_Order_Item_Product $item ): ?array {
+		$raw = $item->get_meta( '_woocommerce_pos_data', true );
+		if ( ! \is_string( $raw ) || '' === $raw ) {
+			return null;
+		}
+
+		$data = json_decode( $raw, true );
+		if (
+			JSON_ERROR_NONE !== json_last_error()
+			|| ! \is_array( $data )
+			|| ! isset( $data['price'], $data['regular_price'], $data['tax_status'] )
+			|| ! is_numeric( $data['price'] )
+			|| ! is_numeric( $data['regular_price'] )
+			|| ! \in_array( $data['tax_status'], array( 'none', 'taxable', 'shipping' ), true )
+		) {
+			return null;
+		}
+
+		return array(
+			'price'         => (float) $data['price'],
+			'regular_price' => (float) $data['regular_price'],
+			'tax_status'    => (string) $data['tax_status'],
+		);
+	}
+
+	/**
+	 * Convert a recorded price into tax-inclusive/exclusive historical bases.
+	 *
+	 * @param float  $value              Recorded price in the order's entered-price basis.
+	 * @param string $tax_status         Recorded product tax status.
+	 * @param bool   $prices_include_tax Whether recorded prices include tax.
+	 * @param float  $subtotal_incl      Stored line subtotal including tax.
+	 * @param float  $subtotal_excl      Stored line subtotal excluding tax.
+	 *
+	 * @return array{incl:?float,excl:?float}
+	 */
+	private function convert_recorded_price_bases(
+		float $value,
+		string $tax_status,
+		bool $prices_include_tax,
+		float $subtotal_incl,
+		float $subtotal_excl
+	): array {
+		if ( 'none' === $tax_status || 0.0 === $value ) {
+			return array(
+				'incl' => $value,
+				'excl' => $value,
+			);
+		}
+
+		if ( $prices_include_tax ) {
+			return array(
+				'incl' => $value,
+				'excl' => 0.0 !== $subtotal_incl ? $value * $subtotal_excl / $subtotal_incl : null,
+			);
+		}
+
+		return array(
+			'incl' => 0.0 !== $subtotal_excl ? $value * $subtotal_incl / $subtotal_excl : null,
+			'excl' => $value,
+		);
+	}
+
+	/**
+	 * Derive recorded prices and savings without changing WooCommerce discounts.
+	 *
+	 * @param \WC_Order_Item_Product $item               Order item.
+	 * @param WC_Abstract_Order      $order              Receipt order.
+	 * @param bool                   $display_incl       Whether generic values include tax.
+	 * @param float                  $qty                Item quantity.
+	 * @param float                  $unit_subtotal_incl Stored unit subtotal including tax.
+	 * @param float                  $unit_subtotal_excl Stored unit subtotal excluding tax.
+	 * @param float                  $subtotal_incl      Stored line subtotal including tax.
+	 * @param float                  $subtotal_excl      Stored line subtotal excluding tax.
+	 * @param float                  $total_incl         Stored line total including tax.
+	 * @param float                  $total_excl         Stored line total excluding tax.
+	 *
+	 * @return array<string,float|bool|null>
+	 */
+	private function get_line_price_convenience_fields(
+		\WC_Order_Item_Product $item,
+		WC_Abstract_Order $order,
+		bool $display_incl,
+		float $qty,
+		float $unit_subtotal_incl,
+		float $unit_subtotal_excl,
+		float $subtotal_incl,
+		float $subtotal_excl,
+		float $total_incl,
+		float $total_excl
+	): array {
+		$pos_data           = $this->get_pos_price_data( $item );
+		$prices_include_tax = method_exists( $order, 'get_prices_include_tax' ) && $order->get_prices_include_tax();
+		$selling            = array(
+			'incl' => $unit_subtotal_incl,
+			'excl' => $unit_subtotal_excl,
+		);
+		$regular = array(
+			'incl' => null,
+			'excl' => null,
+		);
+
+		if ( null !== $pos_data ) {
+			$recorded_selling = $this->convert_recorded_price_bases(
+				$pos_data['price'],
+				$pos_data['tax_status'],
+				$prices_include_tax,
+				$subtotal_incl,
+				$subtotal_excl
+			);
+			$regular          = $this->convert_recorded_price_bases(
+				$pos_data['regular_price'],
+				$pos_data['tax_status'],
+				$prices_include_tax,
+				$subtotal_incl,
+				$subtotal_excl
+			);
+
+			foreach ( array( 'incl', 'excl' ) as $basis ) {
+				if ( null !== $recorded_selling[ $basis ] ) {
+					$selling[ $basis ] = $recorded_selling[ $basis ];
+				}
+			}
+		}
+
+		$unit_savings = array(
+			'incl' => null !== $regular['incl'] ? max( 0.0, $regular['incl'] - $selling['incl'] ) : null,
+			'excl' => null !== $regular['excl'] ? max( 0.0, $regular['excl'] - $selling['excl'] ) : null,
+		);
+		$multiply    = static function ( ?float $value ) use ( $qty ): ?float {
+			return null === $value ? null : $value * $qty;
+		};
+		$line_regular = array(
+			'incl' => $multiply( $regular['incl'] ),
+			'excl' => $multiply( $regular['excl'] ),
+		);
+		$line_selling = array(
+			'incl' => $multiply( $selling['incl'] ),
+			'excl' => $multiply( $selling['excl'] ),
+		);
+		$line_savings = array(
+			'incl' => $multiply( $unit_savings['incl'] ),
+			'excl' => $multiply( $unit_savings['excl'] ),
+		);
+
+		$savings_in_discounts = false;
+		$stored               = array(
+			'incl' => array(
+				'subtotal' => $subtotal_incl,
+				'total'    => $total_incl,
+			),
+			'excl' => array(
+				'subtotal' => $subtotal_excl,
+				'total'    => $total_excl,
+			),
+		);
+		// Compare on the recorded-price basis first: the opposite basis is float-derived
+		// from stored line ratios, and WooCommerce's own tax rounding can shift it by a
+		// sub-cent. Price-decimal precision tolerates that noise; rounding precision does not.
+		$precision   = wc_get_price_decimals();
+		$basis_order = $prices_include_tax ? array( 'incl', 'excl' ) : array( 'excl', 'incl' );
+		foreach ( $basis_order as $basis ) {
+			if ( null === $line_savings[ $basis ] || $line_savings[ $basis ] <= 0.0 ) {
+				continue;
+			}
+
+			$distance_to_regular = round( abs( $stored[ $basis ]['subtotal'] - $line_regular[ $basis ] ), $precision );
+			$distance_to_selling = round( abs( $stored[ $basis ]['subtotal'] - $line_selling[ $basis ] ), $precision );
+			$stored_discount     = round( max( 0.0, $stored[ $basis ]['subtotal'] - $stored[ $basis ]['total'] ), $precision );
+			$recorded_savings    = round( $line_savings[ $basis ], $precision );
+
+			$savings_in_discounts = $distance_to_regular < $distance_to_selling
+				&& $stored_discount >= $recorded_savings;
+			break;
+		}
+
+		$select = static function ( array $values ) use ( $display_incl ): ?float {
+			return $display_incl ? $values['incl'] : $values['excl'];
+		};
+
+		return array(
+			'regular_price'           => $select( $regular ),
+			'regular_price_incl'      => $regular['incl'],
+			'regular_price_excl'      => $regular['excl'],
+			'selling_price'           => $select( $selling ),
+			'selling_price_incl'      => $selling['incl'],
+			'selling_price_excl'      => $selling['excl'],
+			'unit_savings'            => $select( $unit_savings ),
+			'unit_savings_incl'       => $unit_savings['incl'],
+			'unit_savings_excl'       => $unit_savings['excl'],
+			'line_regular_total'      => $select( $line_regular ),
+			'line_regular_total_incl' => $line_regular['incl'],
+			'line_regular_total_excl' => $line_regular['excl'],
+			'line_selling_total'      => $select( $line_selling ),
+			'line_selling_total_incl' => $line_selling['incl'],
+			'line_selling_total_excl' => $line_selling['excl'],
+			'line_savings'            => $select( $line_savings ),
+			'line_savings_incl'       => $line_savings['incl'],
+			'line_savings_excl'       => $line_savings['excl'],
+			'savings_in_discounts'    => $savings_in_discounts,
+		);
+	}
 
 	/**
 	 * Resolve an optional human-facing coupon label for a receipt discount row.

@@ -46,17 +46,23 @@ class Landing_Profile {
 	/**
 	 * Get functional data that is always available (no consent required).
 	 *
-	 * Used for translations, feature gating, and schema versioning.
+	 * Used for translations, feature gating, and schema versioning. Includes the
+	 * anonymous identity and the server-resolved experiment flags so the landing
+	 * bundle can bootstrap its A/B variant at first paint without a network flag
+	 * fetch (landing-experiments spec §5.1).
 	 *
 	 * @return array
 	 */
 	public function get_functional_data(): array {
+		$anon_id = ( new Anon_ID() )->get();
+
 		return array(
-			'schema_version' => 2, // bumped: anon_id added (landing-experiments spec §5.1).
-			'locale'         => get_locale(),
-			'plugin_version' => PLUGIN_VERSION,
-			'pro_active'     => class_exists( '\WCPOS\WooCommercePOSPro\WooCommercePOSPro' ),
-			'anon_id'        => ( new Anon_ID() )->get(),
+			'schema_version'  => 2, // bumped: anon_id added (landing-experiments spec §5.1).
+			'locale'          => get_locale(),
+			'plugin_version'  => PLUGIN_VERSION,
+			'pro_active'      => class_exists( '\WCPOS\WooCommercePOSPro\WooCommercePOSPro' ),
+			'anon_id'         => $anon_id,
+			'bootstrap_flags' => ( new Feature_Flags() )->get_landing_bootstrap_flags( $anon_id ),
 		);
 	}
 
@@ -94,10 +100,29 @@ class Landing_Profile {
 				'site_uuid'   => get_option( 'woocommerce_pos_uuid', '' ),
 				'user_uuid'   => get_user_meta( $user->ID, '_woocommerce_pos_uuid', true ),
 				'user_role'   => ! empty( $user->roles ) ? $user->roles[0] : '',
+				'site_domain'  => $this->get_url_host( home_url() ),
+				'admin_domain' => $this->get_url_host( admin_url() ),
 				'wc_currency' => get_woocommerce_currency(),
 				'wc_country'  => WC()->countries->get_base_country(),
 			)
 		);
+	}
+
+	/**
+	 * Extract a hostname from a WordPress URL without retaining paths or query strings.
+	 *
+	 * @param string $url URL to parse.
+	 *
+	 * @return string
+	 */
+	private function get_url_host( string $url ): string {
+		$host = wp_parse_url( $url, PHP_URL_HOST );
+
+		if ( ! is_string( $host ) ) {
+			return '';
+		}
+
+		return strtolower( $host );
 	}
 
 	/**

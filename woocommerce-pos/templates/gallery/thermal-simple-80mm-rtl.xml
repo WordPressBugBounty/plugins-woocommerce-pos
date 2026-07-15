@@ -65,6 +65,15 @@ these star columns with hard-coded widths.
   {{#lines}}
   <bold><text>{{name}}</text></bold>
   {{#sku}}<text>{{sku}} :SKU  </text>{{/sku}}
+  {{#line_savings}}
+  <text>{{regular_price_display}} :{{i18n.regular_price}}  </text>
+  {{^savings_in_discounts}}
+  <row>
+    <col width="14">-{{line_savings_display}}</col>
+    <col width="*" align="right">{{i18n.savings}}  </col>
+  </row>
+  {{/savings_in_discounts}}
+  {{/line_savings}}
   {{#discounts}}
   <row>
     <col width="12">-{{discounts_display}}</col>
@@ -114,6 +123,14 @@ these star columns with hard-coded widths.
     <col width="14"><bold>{{totals.total_incl_display}}</bold></col>
     <col width="*" align="right"><bold>{{i18n.total}}</bold></col>
   </row>
+  {{#totals.total_saved_complete}}
+  {{#totals.total_saved_incl}}
+  <row>
+    <col width="14">{{totals.total_saved_incl_display}}</col>
+    <col width="*" align="right">{{i18n.total_saved}}</col>
+  </row>
+  {{/totals.total_saved_incl}}
+  {{/totals.total_saved_complete}}
   <line style="double" />
 
   <!-- ── Customer note ─────────────── -->

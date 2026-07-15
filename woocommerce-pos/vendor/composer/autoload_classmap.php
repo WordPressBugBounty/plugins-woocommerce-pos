@@ -320,6 +320,7 @@ return array(
     'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Submit_Service' => $baseDir . '/includes/Services/Cloud_Print_Submit_Service.php',
     'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Trigger_Service' => $baseDir . '/includes/Services/Cloud_Print_Trigger_Service.php',
     'WCPOS\\WooCommercePOS\\Services\\Extensions' => $baseDir . '/includes/Services/Extensions.php',
+    'WCPOS\\WooCommercePOS\\Services\\Feature_Flags' => $baseDir . '/includes/Services/Feature_Flags.php',
     'WCPOS\\WooCommercePOS\\Services\\Fiscal_Receipt_Service' => $baseDir . '/includes/Services/Fiscal_Receipt_Service.php',
     'WCPOS\\WooCommercePOS\\Services\\Landing_Profile' => $baseDir . '/includes/Services/Landing_Profile.php',
     'WCPOS\\WooCommercePOS\\Services\\Meta_Data_Repair' => $baseDir . '/includes/Services/Meta_Data_Repair.php',
