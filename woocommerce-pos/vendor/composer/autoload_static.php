@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInit2386495f0a42468742e65c4101575a5f
+class ComposerStaticInit8deb70ad4da09e7b12d2ea67470510f4
 {
     public static $files = array (
         '23c18046f52bef3eea034657bafda50f' => __DIR__ . '/..' . '/symfony/polyfill-php81/bootstrap.php',
@@ -455,6 +455,7 @@ class ComposerStaticInit2386495f0a42468742e65c4101575a5f
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Escpos_Thermal_Emitter' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Escpos_Thermal_Emitter.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Html_Thermal_Emitter' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Html_Thermal_Emitter.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Star_Markup_Thermal_Emitter' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Star_Markup_Thermal_Emitter.php',
+        'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Starprnt_Thermal_Emitter' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Starprnt_Thermal_Emitter.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Markup_Parser' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Thermal_Markup_Parser.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Renderer' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Thermal_Renderer.php',
         'WCPOS\\WooCommercePOS\\Templates\\Validator' => __DIR__ . '/../..' . '/includes/Templates/Validator.php',
@@ -465,10 +466,10 @@ class ComposerStaticInit2386495f0a42468742e65c4101575a5f
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInit2386495f0a42468742e65c4101575a5f::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInit2386495f0a42468742e65c4101575a5f::$prefixDirsPsr4;
-            $loader->prefixesPsr0 = ComposerStaticInit2386495f0a42468742e65c4101575a5f::$prefixesPsr0;
-            $loader->classMap = ComposerStaticInit2386495f0a42468742e65c4101575a5f::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit8deb70ad4da09e7b12d2ea67470510f4::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit8deb70ad4da09e7b12d2ea67470510f4::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInit8deb70ad4da09e7b12d2ea67470510f4::$prefixesPsr0;
+            $loader->classMap = ComposerStaticInit8deb70ad4da09e7b12d2ea67470510f4::$classMap;
 
         }, null, ClassLoader::class);
     }

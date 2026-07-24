@@ -376,6 +376,7 @@ return array(
     'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Escpos_Thermal_Emitter' => $baseDir . '/includes/Templates/Thermal/Escpos_Thermal_Emitter.php',
     'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Html_Thermal_Emitter' => $baseDir . '/includes/Templates/Thermal/Html_Thermal_Emitter.php',
     'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Star_Markup_Thermal_Emitter' => $baseDir . '/includes/Templates/Thermal/Star_Markup_Thermal_Emitter.php',
+    'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Starprnt_Thermal_Emitter' => $baseDir . '/includes/Templates/Thermal/Starprnt_Thermal_Emitter.php',
     'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Markup_Parser' => $baseDir . '/includes/Templates/Thermal/Thermal_Markup_Parser.php',
     'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Renderer' => $baseDir . '/includes/Templates/Thermal/Thermal_Renderer.php',
     'WCPOS\\WooCommercePOS\\Templates\\Validator' => $baseDir . '/includes/Templates/Validator.php',
