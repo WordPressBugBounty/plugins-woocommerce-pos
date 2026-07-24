@@ -9,6 +9,7 @@ namespace WCPOS\WooCommercePOS\API;
 
 use WCPOS\WooCommercePOS\Logger;
 use WCPOS\WooCommercePOS\Services\Cloud_Print_Diagnostic;
+use WCPOS\WooCommercePOS\Services\Cloud_Print_Relay_Service;
 use WCPOS\WooCommercePOS\Services\Cloud_Print_Registry;
 use WCPOS\WooCommercePOS\Services\Cloud_Print_Trigger_Service;
 use WCPOS\WooCommercePOS\Services\PrintNode_Client;
@@ -115,11 +116,55 @@ class Print_Jobs_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/' . $this->rest_base . '/queue',
+			array(
+				array(
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => array( $this, 'get_queue' ),
+					'permission_callback' => array( $this, 'manage_permissions_check' ),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/' . $this->rest_base . '/queue/cancel',
+			array(
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'cancel_queue' ),
+					'permission_callback' => array( $this, 'manage_permissions_check' ),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/' . $this->rest_base . '/test',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'test_print' ),
 				'permission_callback' => array( $this, 'manage_permissions_check' ),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/' . $this->rest_base . '/relay-verification',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'relay_verification' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/' . $this->rest_base . '/relay/register',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'relay_register' ),
+				'permission_callback' => array( $this, 'relay_manage_permissions_check' ),
 			)
 		);
 
@@ -135,9 +180,36 @@ class Print_Jobs_Controller extends WP_REST_Controller {
 			)
 		);
 
+		// Path-credential form: Star printers URL-encode the configured query
+		// string on the wire (& becomes %26), so printer_id/pt can never
+		// arrive as query parameters — but the path is transmitted verbatim.
+		register_rest_route(
+			$this->namespace,
+			'/' . $this->rest_base . '/cloudprnt/(?P<printer_id>[^/]+)/(?P<pt>[^/]+)',
+			array(
+				array(
+					'methods'             => array( 'POST', 'GET', 'DELETE' ),
+					'callback'            => array( $this, 'cloudprnt' ),
+					'permission_callback' => array( $this, 'printer_token_permissions_check' ),
+				),
+			)
+		);
+
 		register_rest_route(
 			$this->namespace,
 			'/' . $this->rest_base . '/epson-sdp',
+			array(
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'epson_sdp' ),
+					'permission_callback' => array( $this, 'printer_token_permissions_check' ),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/' . $this->rest_base . '/epson-sdp/(?P<printer_id>[^/]+)/(?P<pt>[^/]+)',
 			array(
 				array(
 					'methods'             => WP_REST_Server::CREATABLE,
@@ -357,6 +429,145 @@ class Print_Jobs_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * The admin queue view: paginated jobs (payloads stripped), status counts,
+	 * and per-printer backlog with last-seen data for staleness banners.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 *
+	 * @return \WP_REST_Response
+	 */
+	public function get_queue( $request ) {
+		$per_page = (int) $request->get_param( 'per_page' );
+		$per_page = min( 100, max( 1, 0 === $per_page ? 20 : $per_page ) );
+		$page     = max( 1, (int) $request->get_param( 'page' ) );
+		$status   = $request->get_param( 'status' );
+		if ( 'active' === $status ) {
+			// The default queue view: everything not yet terminal-successful.
+			$status = array(
+				Print_Job_Service::STATUS_PENDING,
+				Print_Job_Service::STATUS_CLAIMED,
+				Print_Job_Service::STATUS_FAILED,
+			);
+		}
+		$filters = array(
+			'printer_id' => $request->get_param( 'printer_id' ),
+			'status'     => $status,
+		);
+
+		$jobs = array_map(
+			function ( array $job ): array {
+				$order = $job['order_id'] ? wc_get_order( $job['order_id'] ) : false;
+				if ( $order ) {
+					$job['order_number']   = (string) $order->get_order_number();
+					$job['order_edit_url'] = $order->get_edit_order_url();
+				}
+
+				return $job;
+			},
+			$this->jobs->query_rows(
+				array_merge(
+					$filters,
+					array(
+						'limit' => $per_page,
+						'page'  => $page,
+					)
+				)
+			)
+		);
+
+		// One grouped query covers all status counts and every printer's
+		// backlog — the view refreshes every 30 s, so summary cost must not
+		// scale with printer count.
+		$summary = $this->jobs->status_summary();
+
+		$counts = array();
+		foreach ( array(
+			Print_Job_Service::STATUS_PENDING,
+			Print_Job_Service::STATUS_CLAIMED,
+			Print_Job_Service::STATUS_PRINTED,
+			Print_Job_Service::STATUS_FAILED,
+			Print_Job_Service::STATUS_CANCELLED,
+		) as $status ) {
+			$counts[ $status ] = 0;
+			foreach ( $summary as $per_status ) {
+				$counts[ $status ] += isset( $per_status[ $status ] ) ? $per_status[ $status ]['count'] : 0;
+			}
+		}
+
+		$printers = array();
+		foreach ( $this->registry->get_printers() as $printer ) {
+			$printer_id = (string) ( $printer['id'] ?? '' );
+			if ( '' === $printer_id ) {
+				continue;
+			}
+			// Waiting = pending + claimed: a printer that fetched a job and
+			// then died leaves it claimed forever with zero pending — that
+			// backlog must still trip the stale banner.
+			$waiting = 0;
+			$oldest  = '';
+			foreach ( array( Print_Job_Service::STATUS_PENDING, Print_Job_Service::STATUS_CLAIMED ) as $status ) {
+				if ( ! isset( $summary[ $printer_id ][ $status ] ) ) {
+					continue;
+				}
+				$waiting += $summary[ $printer_id ][ $status ]['count'];
+				$created  = $summary[ $printer_id ][ $status ]['oldest_gmt'];
+				if ( '' !== $created && ( '' === $oldest || $created < $oldest ) ) {
+					$oldest = $created;
+				}
+			}
+			$printers[] = array(
+				'printer_id'         => $printer_id,
+				'name'               => (string) ( $printer['name'] ?? $printer_id ),
+				// Push providers (PrintNode, Star Online) never poll, so
+				// last-seen staleness is meaningless for them — the UI must
+				// not show a "never fetched" banner. A missing provider
+				// defaults to star-cloudprnt exactly like the print path, so
+				// legacy rows without the field keep their stale warnings.
+				'polling'            => Provider::is_polling(
+					'' !== (string) ( $printer['provider'] ?? '' ) ? (string) $printer['provider'] : 'star-cloudprnt'
+				),
+				'pending'            => $waiting,
+				'oldest_pending_gmt' => $oldest,
+				'last_seen'          => $this->registry->get_seen( $printer_id ),
+			);
+		}
+
+		return rest_ensure_response(
+			array(
+				'jobs'     => $jobs,
+				'total'    => $this->jobs->count( $filters ),
+				'page'     => $page,
+				'per_page' => $per_page,
+				'summary'  => array(
+					'counts'   => $counts,
+					'printers' => $printers,
+				),
+			)
+		);
+	}
+
+	/**
+	 * Bulk-cancel waiting jobs by explicit ids or for a whole printer.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 *
+	 * @return \WP_REST_Response
+	 */
+	public function cancel_queue( $request ) {
+		$ids        = $request->get_param( 'ids' );
+		$printer_id = sanitize_text_field( (string) $request->get_param( 'printer_id' ) );
+
+		$cancelled = $this->jobs->cancel_waiting(
+			array(
+				'ids'        => \is_array( $ids ) ? $ids : array(),
+				'printer_id' => $printer_id,
+			)
+		);
+
+		return rest_ensure_response( array( 'cancelled' => $cancelled ) );
+	}
+
+	/**
 	 * Reprint a print job by copying it to a new pending job.
 	 *
 	 * @param WP_REST_Request $request Request.
@@ -372,13 +583,29 @@ class Print_Jobs_Controller extends WP_REST_Controller {
 				array( 'status' => 404 )
 			);
 		}
+		if ( '' === $source['payload'] && '' === $source['template_id'] ) {
+			// A stripped raw job has nothing left to print — refuse loudly
+			// rather than queue a blank receipt.
+			return new WP_Error(
+				'wcpos_print_job_source_expired',
+				__( 'This job\'s stored receipt has been cleaned up and it has no template to re-render from.', 'woocommerce-pos' ),
+				array( 'status' => 410 )
+			);
+		}
 		$new_id = $this->jobs->create(
 			array(
-				'printer_id'   => $source['printer_id'],
-				'content_type' => $source['content_type'],
-				'payload'      => $source['payload'],
-				'order_id'     => $source['order_id'] ? $source['order_id'] : null,
-				'format'       => $source['format'] ? $source['format'] : null,
+				'printer_id'       => $source['printer_id'],
+				'content_type'     => $source['content_type'],
+				'payload'          => $source['payload'],
+				'order_id'         => $source['order_id'] ? $source['order_id'] : null,
+				'format'           => $source['format'] ? $source['format'] : null,
+				// Template-backed jobs (auto-print) carry no stored payload —
+				// the render metadata must survive the copy or the reprint
+				// renders nothing.
+				'template_id'      => '' !== $source['template_id'] ? $source['template_id'] : null,
+				'pn_kind'          => '' !== $source['pn_kind'] ? $source['pn_kind'] : null,
+				'auto_open_drawer' => $source['auto_open_drawer'],
+				'drawer_connector' => $source['drawer_connector'],
 			)
 		);
 		if ( $new_id <= 0 ) {
@@ -990,7 +1217,46 @@ class Print_Jobs_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * Permission check for app/admin management routes.
+	 * Serve the pending relay verification token (public; consent callback).
+	 *
+	 * @return \WP_REST_Response|WP_Error
+	 */
+	public function relay_verification() {
+		$token = Cloud_Print_Relay_Service::pending_verification_token();
+		if ( null === $token ) {
+			return new WP_Error(
+				'wcpos_relay_no_pending_verification',
+				__( 'No relay verification is pending.', 'woocommerce-pos' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		return rest_ensure_response( array( 'token' => $token ) );
+	}
+
+	/**
+	 * Register this site with the WCPOS Cloud Print relay.
+	 *
+	 * @return \WP_REST_Response|WP_Error
+	 */
+	public function relay_register() {
+		$result = Cloud_Print_Relay_Service::register_site();
+
+		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
+	}
+
+	/**
+	 * Permission check for relay registration routes.
+	 *
+	 * Registering rotates the site's relay credentials, so it needs the
+	 * settings-management capability, not the cashier-level print capability.
+	 */
+	public function relay_manage_permissions_check(): bool {
+		return current_user_can( 'manage_woocommerce_pos' );
+	}
+
+	/**
+	 * Check permissions for cashier-level print job actions.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 *

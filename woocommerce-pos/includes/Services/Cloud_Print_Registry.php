@@ -18,6 +18,17 @@ class Cloud_Print_Registry {
 	const PN_STATUS_TTL  = 60;  // Seconds; PrintNode live-status cache window.
 
 	/**
+	 * All registered cloud printers.
+	 *
+	 * @return array<int, array>
+	 */
+	public function get_printers(): array {
+		$settings = get_option( self::OPTION, array() );
+
+		return isset( $settings['printers'] ) && \is_array( $settings['printers'] ) ? $settings['printers'] : array();
+	}
+
+	/**
 	 * Get a registered cloud printer by id.
 	 *
 	 * @param string $printer_id Printer id.
@@ -25,10 +36,7 @@ class Cloud_Print_Registry {
 	 * @return array|null
 	 */
 	public function get_printer( string $printer_id ): ?array {
-		$settings = get_option( self::OPTION, array() );
-		$printers = isset( $settings['printers'] ) && \is_array( $settings['printers'] ) ? $settings['printers'] : array();
-
-		foreach ( $printers as $printer ) {
+		foreach ( $this->get_printers() as $printer ) {
 			if ( isset( $printer['id'] ) && hash_equals( (string) $printer['id'], $printer_id ) ) {
 				return $printer;
 			}
@@ -158,12 +166,36 @@ class Cloud_Print_Registry {
 			return $this->star_online_status( $printer );
 		}
 
+		if ( null !== $printer && Provider::is_polling( (string) ( $printer['provider'] ?? '' ) ) ) {
+			$relay_status = Cloud_Print_Relay_Service::status( $printer_id );
+			if ( null !== $relay_status && 'blocked' === $relay_status['origin_status'] ) {
+				return 'blocked';
+			}
+			if ( null !== $relay_status && null !== $relay_status['last_seen_seconds_ago'] && $relay_status['last_seen_seconds_ago'] <= self::SEEN_TTL ) {
+				return 'connected';
+			}
+		}
+
 		$seen = $this->get_seen( $printer_id );
 		if ( 0 === $seen ) {
 			return 'waiting';
 		}
 
 		return ( time() - $seen ) <= self::SEEN_TTL ? 'connected' : 'offline';
+	}
+
+	/**
+	 * The relay's block signal for a printer, when it reports one.
+	 *
+	 * Delegates to the relay service's transient-cached status, so this is
+	 * safe to call in any order relative to status_for().
+	 *
+	 * @param string $printer_id Printer ID.
+	 *
+	 * @return string|null
+	 */
+	public function status_detail_for( string $printer_id ): ?string {
+		return Cloud_Print_Relay_Service::status_detail( $printer_id );
 	}
 
 	/**

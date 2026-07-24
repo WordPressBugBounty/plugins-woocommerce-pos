@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInitdde46eb938a8b5a67cb49bc6f23febb5
+class ComposerStaticInit2386495f0a42468742e65c4101575a5f
 {
     public static $files = array (
         '23c18046f52bef3eea034657bafda50f' => __DIR__ . '/..' . '/symfony/polyfill-php81/bootstrap.php',
@@ -396,6 +396,7 @@ class ComposerStaticInitdde46eb938a8b5a67cb49bc6f23febb5
         'WCPOS\\WooCommercePOS\\Services\\Cashier' => __DIR__ . '/../..' . '/includes/Services/Cashier.php',
         'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Diagnostic' => __DIR__ . '/../..' . '/includes/Services/Cloud_Print_Diagnostic.php',
         'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Registry' => __DIR__ . '/../..' . '/includes/Services/Cloud_Print_Registry.php',
+        'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Relay_Service' => __DIR__ . '/../..' . '/includes/Services/Cloud_Print_Relay_Service.php',
         'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Submit_Service' => __DIR__ . '/../..' . '/includes/Services/Cloud_Print_Submit_Service.php',
         'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Trigger_Service' => __DIR__ . '/../..' . '/includes/Services/Cloud_Print_Trigger_Service.php',
         'WCPOS\\WooCommercePOS\\Services\\Extensions' => __DIR__ . '/../..' . '/includes/Services/Extensions.php',
@@ -430,6 +431,7 @@ class ComposerStaticInitdde46eb938a8b5a67cb49bc6f23febb5
         'WCPOS\\WooCommercePOS\\Services\\Tax_Id_Types' => __DIR__ . '/../..' . '/includes/Services/Tax_Id_Types.php',
         'WCPOS\\WooCommercePOS\\Services\\Tax_Id_Writer' => __DIR__ . '/../..' . '/includes/Services/Tax_Id_Writer.php',
         'WCPOS\\WooCommercePOS\\Services\\Template_Pdf_Service' => __DIR__ . '/../..' . '/includes/Services/Template_Pdf_Service.php',
+        'WCPOS\\WooCommercePOS\\Storefront_Receipts' => __DIR__ . '/../..' . '/includes/Storefront_Receipts.php',
         'WCPOS\\WooCommercePOS\\Template_Router' => __DIR__ . '/../..' . '/includes/Template_Router.php',
         'WCPOS\\WooCommercePOS\\Templates' => __DIR__ . '/../..' . '/includes/Templates.php',
         'WCPOS\\WooCommercePOS\\Templates\\Adapters\\Cpcl_Output_Adapter' => __DIR__ . '/../..' . '/includes/Templates/Adapters/Cpcl_Output_Adapter.php',
@@ -463,10 +465,10 @@ class ComposerStaticInitdde46eb938a8b5a67cb49bc6f23febb5
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInitdde46eb938a8b5a67cb49bc6f23febb5::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInitdde46eb938a8b5a67cb49bc6f23febb5::$prefixDirsPsr4;
-            $loader->prefixesPsr0 = ComposerStaticInitdde46eb938a8b5a67cb49bc6f23febb5::$prefixesPsr0;
-            $loader->classMap = ComposerStaticInitdde46eb938a8b5a67cb49bc6f23febb5::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit2386495f0a42468742e65c4101575a5f::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit2386495f0a42468742e65c4101575a5f::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInit2386495f0a42468742e65c4101575a5f::$prefixesPsr0;
+            $loader->classMap = ComposerStaticInit2386495f0a42468742e65c4101575a5f::$classMap;
 
         }, null, ClassLoader::class);
     }
