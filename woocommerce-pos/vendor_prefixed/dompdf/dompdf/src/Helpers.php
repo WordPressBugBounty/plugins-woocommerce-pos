@@ -710,8 +710,8 @@ class Helpers
         static $cache = [];
         // Custom types
         $types = [\IMAGETYPE_JPEG => "jpeg", \IMAGETYPE_GIF => "gif", \IMAGETYPE_BMP => "bmp", \IMAGETYPE_PNG => "png", \IMAGETYPE_WEBP => "webp"];
-        if (\defined('WCPOS\\Vendor\\IMAGETYPE_SVG')) {
-            $types[IMAGETYPE_SVG] = "svg";
+        if (\defined('IMAGETYPE_SVG')) {
+            $types[\IMAGETYPE_SVG] = "svg";
         }
         if (isset($cache[$filename])) {
             return $cache[$filename];
@@ -747,8 +747,8 @@ class Helpers
                     $width = (float) $width;
                     $height = (float) $height;
                     $type = "svg";
-                    if (\defined('WCPOS\\Vendor\\IMAGETYPE_SVG')) {
-                        $typeconst = IMAGETYPE_SVG;
+                    if (\defined('IMAGETYPE_SVG')) {
+                        $typeconst = \IMAGETYPE_SVG;
                     }
                     $mime = "image/svg+xml";
                     $bits = 32;
@@ -967,7 +967,7 @@ class Helpers
             if ($is_local_path || \ini_get('allow_url_fopen') && !$can_use_curl) {
                 $http_response_header = null;
                 if (\version_compare(\PHP_VERSION, "8.4.0", ">=")) {
-                    \WCPOS\Vendor\http_clear_last_response_headers();
+                    \http_clear_last_response_headers();
                 }
                 if ($is_local_path === \false) {
                     $uri = Helpers::encodeURI($uri);
@@ -981,8 +981,8 @@ class Helpers
                     $content = $result;
                 }
                 if (\version_compare(\PHP_VERSION, "8.4.0", ">=")) {
-                    $headers = \WCPOS\Vendor\http_get_last_response_headers();
-                    \WCPOS\Vendor\http_clear_last_response_headers();
+                    $headers = \http_get_last_response_headers();
+                    \http_clear_last_response_headers();
                 } elseif (isset($http_response_header)) {
                     $headers = $http_response_header;
                 }
