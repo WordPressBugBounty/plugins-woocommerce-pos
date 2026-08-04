@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInitd314d8e08ecddaafa88a270bcf997c4c
+class ComposerStaticInit8454f2701641055150b8e4897e686c14
 {
     public static $files = array (
         '23c18046f52bef3eea034657bafda50f' => __DIR__ . '/..' . '/symfony/polyfill-php81/bootstrap.php',
@@ -451,6 +451,7 @@ class ComposerStaticInitd314d8e08ecddaafa88a270bcf997c4c
         'WCPOS\\WooCommercePOS\\Templates\\Received' => __DIR__ . '/../..' . '/includes/Templates/Received.php',
         'WCPOS\\WooCommercePOS\\Templates\\Renderers\\Legacy_Php_Renderer' => __DIR__ . '/../..' . '/includes/Templates/Renderers/Legacy_Php_Renderer.php',
         'WCPOS\\WooCommercePOS\\Templates\\Renderers\\Logicless_Renderer' => __DIR__ . '/../..' . '/includes/Templates/Renderers/Logicless_Renderer.php',
+        'WCPOS\\WooCommercePOS\\Templates\\Renderers\\Thermal_Html_Renderer' => __DIR__ . '/../..' . '/includes/Templates/Renderers/Thermal_Html_Renderer.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Epos_Xml_Thermal_Emitter' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Epos_Xml_Thermal_Emitter.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Escpos_Thermal_Emitter' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Escpos_Thermal_Emitter.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Html_Thermal_Emitter' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Html_Thermal_Emitter.php',
@@ -466,10 +467,10 @@ class ComposerStaticInitd314d8e08ecddaafa88a270bcf997c4c
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInitd314d8e08ecddaafa88a270bcf997c4c::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInitd314d8e08ecddaafa88a270bcf997c4c::$prefixDirsPsr4;
-            $loader->prefixesPsr0 = ComposerStaticInitd314d8e08ecddaafa88a270bcf997c4c::$prefixesPsr0;
-            $loader->classMap = ComposerStaticInitd314d8e08ecddaafa88a270bcf997c4c::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit8454f2701641055150b8e4897e686c14::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit8454f2701641055150b8e4897e686c14::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInit8454f2701641055150b8e4897e686c14::$prefixesPsr0;
+            $loader->classMap = ComposerStaticInit8454f2701641055150b8e4897e686c14::$classMap;
 
         }, null, ClassLoader::class);
     }

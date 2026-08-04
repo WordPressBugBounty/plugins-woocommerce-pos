@@ -372,6 +372,7 @@ return array(
     'WCPOS\\WooCommercePOS\\Templates\\Received' => $baseDir . '/includes/Templates/Received.php',
     'WCPOS\\WooCommercePOS\\Templates\\Renderers\\Legacy_Php_Renderer' => $baseDir . '/includes/Templates/Renderers/Legacy_Php_Renderer.php',
     'WCPOS\\WooCommercePOS\\Templates\\Renderers\\Logicless_Renderer' => $baseDir . '/includes/Templates/Renderers/Logicless_Renderer.php',
+    'WCPOS\\WooCommercePOS\\Templates\\Renderers\\Thermal_Html_Renderer' => $baseDir . '/includes/Templates/Renderers/Thermal_Html_Renderer.php',
     'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Epos_Xml_Thermal_Emitter' => $baseDir . '/includes/Templates/Thermal/Epos_Xml_Thermal_Emitter.php',
     'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Escpos_Thermal_Emitter' => $baseDir . '/includes/Templates/Thermal/Escpos_Thermal_Emitter.php',
     'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Html_Thermal_Emitter' => $baseDir . '/includes/Templates/Thermal/Html_Thermal_Emitter.php',
