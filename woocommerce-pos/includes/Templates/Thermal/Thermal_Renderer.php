@@ -4,8 +4,9 @@
  *
  * Ties together the thermal pipeline shipped in earlier phases: it Mustache-renders
  * a thermal template against canonical receipt data, parses the resulting markup
- * into an AST, and emits the requested wire format (ESC/POS raw bytes or Epson
- * ePOS-Print XML).
+ * into an AST, and emits the requested wire format — ESC/POS or StarPRNT command
+ * bytes, Epson ePOS-Print XML, Star Document Markup, plain text, or a PNG raster
+ * of the whole receipt.
  *
  * The Mustache engine configuration mirrors Logicless_Renderer so that data values
  * containing XML-significant characters (`&`, `<`, `>`, quotes) are escaped to valid
@@ -35,7 +36,7 @@ class Thermal_Renderer {
 	 *
 	 * @param array             $template    Template metadata/content.
 	 * @param WC_Abstract_Order $order       The order to render.
-	 * @param string            $wire_format The target wire format ('escpos', 'starprnt' or 'epos-xml').
+	 * @param string            $wire_format The target wire format ('escpos', 'starprnt', 'epos-xml', 'star-markup', 'text' or 'png').
 	 * @param array             $options     Render options.
 	 *
 	 * @throws InvalidArgumentException When the wire format is not supported.
@@ -43,22 +44,78 @@ class Thermal_Renderer {
 	 * @return string The rendered wire-format payload.
 	 */
 	public function render( array $template, WC_Abstract_Order $order, string $wire_format, array $options = array() ): string {
+		return $this->render_with_control( $template, $order, $wire_format, $options )['body'];
+	}
+
+	/**
+	 * Render a thermal template, reporting peripherals the payload cannot carry.
+	 *
+	 * Command formats (ESC/POS, StarPRNT, ePOS-XML) express cut and cash-drawer
+	 * in-band, so they report null for both. Command-free formats — `text` and
+	 * `png` — cannot, and the transport has to ask for them instead:
+	 * on Star CloudPRNT that means the `X-Star-Cut` / `X-Star-CashDrawer` headers
+	 * on the job fetch. Callers serving those formats must forward what comes
+	 * back here or the receipt will neither cut nor open the drawer.
+	 *
+	 * @param array             $template    Template metadata/content.
+	 * @param WC_Abstract_Order $order       The order to render.
+	 * @param string            $wire_format The target wire format.
+	 * @param array             $options     Render options.
+	 *
+	 * @throws InvalidArgumentException When the wire format is not supported.
+	 *
+	 * @return array{body:string, cut:string|null, drawer:string|null}
+	 */
+	public function render_with_control( array $template, WC_Abstract_Order $order, string $wire_format, array $options = array() ): array {
 		$ast = $this->build_ast( $template, $order );
 
 		switch ( $wire_format ) {
 			case 'escpos':
-				return ( new Escpos_Thermal_Emitter( $options ) )->emit( $ast );
+				return self::in_band( ( new Escpos_Thermal_Emitter( $options ) )->emit( $ast ) );
 			case 'starprnt':
-				return ( new Starprnt_Thermal_Emitter( $options ) )->emit( $ast );
+				return self::in_band( ( new Starprnt_Thermal_Emitter( $options ) )->emit( $ast ) );
 			case 'epos-xml':
-				return ( new Epos_Xml_Thermal_Emitter( $options ) )->emit( $ast );
+				return self::in_band( ( new Epos_Xml_Thermal_Emitter( $options ) )->emit( $ast ) );
 			case 'star-markup':
-				return ( new Star_Markup_Thermal_Emitter() )->emit( $ast );
+				return self::in_band( ( new Star_Markup_Thermal_Emitter() )->emit( $ast ) );
+			case 'text':
+				$emitter = new Text_Thermal_Emitter( $options );
+				$body    = $emitter->emit( $ast );
+
+				return array(
+					'body'   => $body,
+					'cut'    => $emitter->cut_type(),
+					'drawer' => $emitter->drawer(),
+				);
+			case 'png':
+				$emitter = new Raster_Thermal_Emitter( $options );
+				$body    = $emitter->emit( $ast );
+
+				return array(
+					'body'   => $body,
+					'cut'    => $emitter->cut_type(),
+					'drawer' => $emitter->drawer(),
+				);
 			default:
 				throw new InvalidArgumentException(
 					esc_html( "Unsupported thermal wire format: {$wire_format}" )
 				);
 		}
+	}
+
+	/**
+	 * Wrap a payload that carries its own cut and drawer commands.
+	 *
+	 * @param string $body The rendered payload.
+	 *
+	 * @return array{body:string, cut:string|null, drawer:string|null}
+	 */
+	private static function in_band( string $body ): array {
+		return array(
+			'body'   => $body,
+			'cut'    => null,
+			'drawer' => null,
+		);
 	}
 
 	/**
@@ -68,15 +125,16 @@ class Thermal_Renderer {
 	 * template against canonical receipt data, strip XML-illegal control characters,
 	 * then parse the markup into an AST.
 	 *
-	 * @param array             $template Template metadata/content.
-	 * @param WC_Abstract_Order $order    The order to render.
+	 * @param array             $template     Template metadata/content.
+	 * @param WC_Abstract_Order $order        The order to render.
+	 * @param array|null        $receipt_data Optional canonical receipt payload.
 	 *
 	 * @return array The thermal AST root (a receipt node).
 	 */
-	public function build_ast( array $template, WC_Abstract_Order $order ): array {
+	public function build_ast( array $template, WC_Abstract_Order $order, ?array $receipt_data = null ): array {
 		$content = (string) ( $template['content'] ?? '' );
 
-		$data = ( new Receipt_Data_Builder() )->build( $order, 'live' );
+		$data = null === $receipt_data ? ( new Receipt_Data_Builder() )->build( $order, 'live' ) : $receipt_data;
 
 		// Pre-format money/display fields so {{*_display}} placeholders resolve,
 		// mirroring Logicless_Renderer.

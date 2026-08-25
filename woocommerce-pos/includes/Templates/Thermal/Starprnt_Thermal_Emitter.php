@@ -33,6 +33,8 @@
 
 namespace WCPOS\WooCommercePOS\Templates\Thermal;
 
+use WCPOS\WooCommercePOS\Templates\Barcode_Symbology;
+
 /**
  * Starprnt_Thermal_Emitter class.
  */
@@ -297,7 +299,7 @@ class Starprnt_Thermal_Emitter {
 	 * @return void
 	 */
 	private function emit_inline_text( string $value ): void {
-		$this->raw_string( $this->normalize_text( $value ) );
+		$this->raw_string( Thermal_Text_Layout::normalize_text( $value ) );
 	}
 
 	/**
@@ -309,33 +311,14 @@ class Starprnt_Thermal_Emitter {
 	 */
 	private function emit_text_line( array $children ): void {
 		if ( 'left' !== $this->align ) {
-			$plain = $this->normalize_text( $this->extract_text( $children ) );
-			$pad   = $this->alignment_padding( $this->display_width( $plain ) );
+			$plain = Thermal_Text_Layout::normalize_text( Thermal_Text_Layout::extract_text( $children ) );
+			$pad   = Thermal_Text_Layout::alignment_padding( $this->align, Thermal_Text_Layout::display_width( $plain ), $this->columns );
 			if ( $pad > 0 ) {
 				$this->raw_string( str_repeat( ' ', $pad ) );
 			}
 		}
 		$this->walk_nodes( $children );
 		$this->newline();
-	}
-
-	/**
-	 * Compute the leading-space padding for the current non-left alignment.
-	 *
-	 * @param int $text_width The display width of the line's plain text.
-	 *
-	 * @return int The number of leading spaces (clamped at 0).
-	 */
-	private function alignment_padding( int $text_width ): int {
-		$remaining = $this->columns - $text_width;
-		if ( $remaining <= 0 ) {
-			return 0;
-		}
-		if ( 'center' === $this->align ) {
-			return (int) floor( $remaining / 2 );
-		}
-
-		return $remaining;
 	}
 
 	/**
@@ -396,8 +379,8 @@ class Starprnt_Thermal_Emitter {
 	private function emit_size( array $node ): void {
 		$previous_width  = $this->width;
 		$previous_height = $this->height;
-		$width           = isset( $node['width'] ) ? max( 1, (int) $node['width'] ) : 1;
-		$height          = isset( $node['height'] ) ? max( 1, (int) $node['height'] ) : 1;
+		$width           = Thermal_Bounds::clamp_int( isset( $node['width'] ) ? $node['width'] : null, 1, Thermal_Bounds::SIZE_MULTIPLIER_MIN, Thermal_Bounds::SIZE_MULTIPLIER_MAX );
+		$height          = Thermal_Bounds::clamp_int( isset( $node['height'] ) ? $node['height'] : null, 1, Thermal_Bounds::SIZE_MULTIPLIER_MIN, Thermal_Bounds::SIZE_MULTIPLIER_MAX );
 
 		$this->raw( array( 0x1b, 0x69, $this->magnification_byte( $height ), $this->magnification_byte( $width ) ) );
 		$this->width  = $width;
@@ -467,14 +450,14 @@ class Starprnt_Thermal_Emitter {
 	 */
 	private function emit_row( array $node ): void {
 		$cols   = isset( $node['children'] ) && \is_array( $node['children'] ) ? $node['children'] : array();
-		$widths = $this->resolve_row_widths( $cols );
+		$widths = Thermal_Text_Layout::resolve_row_widths( $cols, $this->columns );
 
 		$line = '';
 		foreach ( $cols as $index => $col ) {
 			$width = isset( $widths[ $index ] ) ? $widths[ $index ] : 1;
-			$text  = $this->normalize_text( $this->extract_text( isset( $col['children'] ) ? $col['children'] : array() ) );
-			$text  = $this->truncate_display( $text, $width );
-			$pad   = max( 0, $width - $this->display_width( $text ) );
+			$text  = Thermal_Text_Layout::normalize_text( Thermal_Text_Layout::extract_text( isset( $col['children'] ) ? $col['children'] : array() ) );
+			$text  = Thermal_Text_Layout::truncate_display( $text, $width );
+			$pad   = max( 0, $width - Thermal_Text_Layout::display_width( $text ) );
 			$align = isset( $col['align'] ) ? $col['align'] : 'left';
 			if ( 'right' === $align ) {
 				$line .= str_repeat( ' ', $pad ) . $text;
@@ -485,43 +468,6 @@ class Starprnt_Thermal_Emitter {
 
 		$this->raw_string( $line );
 		$this->newline();
-	}
-
-	/**
-	 * Resolve concrete column widths for a row, splitting star columns.
-	 *
-	 * @param array $cols The column AST nodes.
-	 *
-	 * @return array The resolved integer widths, indexed by column.
-	 */
-	private function resolve_row_widths( array $cols ): array {
-		$fixed_total = 0;
-		$star_count  = 0;
-		foreach ( $cols as $col ) {
-			if ( isset( $col['width'] ) && '*' === $col['width'] ) {
-				$star_count++;
-			} else {
-				$fixed_total += isset( $col['width'] ) ? (int) $col['width'] : 0;
-			}
-		}
-
-		$remaining      = max( 0, $this->columns - $fixed_total );
-		$star_width     = $star_count > 0 ? (int) floor( $remaining / $star_count ) : 0;
-		$star_remainder = $star_count > 0 ? $remaining - ( $star_width * $star_count ) : 0;
-
-		$widths     = array();
-		$star_index = 0;
-		foreach ( $cols as $index => $col ) {
-			if ( isset( $col['width'] ) && '*' === $col['width'] ) {
-				$star_index++;
-				$extra            = ( $star_index === $star_count ) ? $star_remainder : 0;
-				$widths[ $index ] = max( 1, $star_width + $extra );
-			} else {
-				$widths[ $index ] = isset( $col['width'] ) ? (int) $col['width'] : 0;
-			}
-		}
-
-		return $widths;
 	}
 
 	/**
@@ -550,24 +496,84 @@ class Starprnt_Thermal_Emitter {
 	}
 
 	/**
-	 * Emit a CODE128 barcode using ESC b, terminated by RS.
+	 * Emit a 1D barcode using ESC b, terminated by RS.
 	 *
-	 * Parameters follow Star's reference plugin: type 6 (Code128), no HRI,
-	 * module width 2, height clamped to the printable 8-255 dot range.
+	 * `ESC b n1 n2 n3 n4 <data> RS` — StarPRNT Command Specifications Ver 1.3E,
+	 * barcode section. n1 is the symbology (owned by Barcode_Symbology; note
+	 * Star numbers the UPC pair the opposite way round to ESC/POS), n2 = 1 for
+	 * "no HRI, line feed after printing", n3 = 2 for the medium module width
+	 * (valid for every symbology we emit), and n4 is the height in dots, clamped
+	 * to the printable 8-255 range.
+	 *
+	 * A StarPRNT printer handed data its symbology cannot encode discards the
+	 * command up to the RS terminator without reporting an error, so an
+	 * unencodable value is printed as text instead.
 	 *
 	 * @param array $node The barcode AST node.
 	 *
 	 * @return void
 	 */
 	private function emit_barcode( array $node ): void {
-		$value  = isset( $node['value'] ) ? (string) $node['value'] : '';
-		$height = isset( $node['height'] ) ? (int) $node['height'] : 40;
-		$height = max( 8, min( 255, $height ) );
+		$value = isset( $node['value'] ) ? (string) $node['value'] : '';
+		if ( '' === trim( $value ) ) {
+			return;
+		}
 
-		$data = substr( $value, 0, 255 );
-		$this->raw( array( 0x1b, 0x62, 0x06, 0x01, 0x02, $height ) );
-		$this->raw_string( $data );
+		$type   = isset( $node['barcode_type'] ) ? (string) $node['barcode_type'] : 'code128';
+		$height = isset( $node['height'] ) ? (int) $node['height'] : 40;
+		// The 8-dot floor is Star's, not the markup's: Thermal_Bounds allows a
+		// 1-dot barcode and ESC/POS prints one, but ESC b rejects anything
+		// shorter than 8. A device-specific bound, so it stays here.
+		$height = max( 8, min( Thermal_Bounds::BARCODE_HEIGHT_MAX, $height ) );
+
+		if ( ! Barcode_Symbology::is_valid_value( $type, $value, Barcode_Symbology::LANE_STARPRNT ) ) {
+			$this->emit_centered_text( $value );
+
+			return;
+		}
+
+		$this->raw( array( 0x1b, 0x62, Barcode_Symbology::starprnt_id( $type ), 0x01, 0x02, $height ) );
+		$this->raw_string( Barcode_Symbology::starprnt_payload( $type, $value ) );
 		$this->raw( array( 0x1e ) );
+	}
+
+	/**
+	 * Print a value as a centered plain-text line.
+	 *
+	 * Mirrors the rescue in Html_Thermal_Emitter::render_barcode_fallback(): when
+	 * the symbol cannot be produced, the value itself is still readable.
+	 *
+	 * Control bytes are folded to spaces first. This is the one path that routes
+	 * a barcode value into the text stream, and a barcode value is exactly where
+	 * a stray tab, LF or CR turns up — Code 128 validation rejects them on the
+	 * ESC/POS lane precisely because code set B cannot encode them, which sends
+	 * them here. Emitted raw they would break the line the rescue is centering.
+	 *
+	 * @param string $value The value to print.
+	 *
+	 * @return void
+	 */
+	private function emit_centered_text( string $value ): void {
+		$text = Thermal_Text_Layout::normalize_text( $this->strip_control_bytes( $value ) );
+		$pad  = (int) floor( max( 0, $this->columns - Thermal_Text_Layout::display_width( $text ) ) / 2 );
+		if ( $pad > 0 ) {
+			$this->raw_string( str_repeat( ' ', $pad ) );
+		}
+		$this->raw_string( $text );
+		$this->newline();
+	}
+
+	/**
+	 * Replace control bytes with spaces so they cannot reach the print stream.
+	 *
+	 * @param string $value The value to clean.
+	 *
+	 * @return string The value with control bytes folded to spaces.
+	 */
+	private function strip_control_bytes( string $value ): string {
+		$cleaned = preg_replace( '/[\x00-\x1f\x7f]/', ' ', $value );
+
+		return null === $cleaned ? $value : $cleaned;
 	}
 
 	/**
@@ -580,7 +586,9 @@ class Starprnt_Thermal_Emitter {
 	private function emit_qrcode( array $node ): void {
 		$value = isset( $node['value'] ) ? (string) $node['value'] : '';
 		$size  = isset( $node['size'] ) ? (int) $node['size'] : 4;
-		$size  = max( 1, min( 8, $size ) );
+		// Star's QR module size tops out at 8, half the ESC/POS ceiling in
+		// Thermal_Bounds::QRCODE_SIZE_MAX. Device-specific, so it stays here.
+		$size  = max( Thermal_Bounds::QRCODE_SIZE_MIN, min( 8, $size ) );
 
 		// Select model 2.
 		$this->raw( array( 0x1b, 0x1d, 0x79, 0x53, 0x30, 0x02 ) );
@@ -620,7 +628,12 @@ class Starprnt_Thermal_Emitter {
 	 * @return void
 	 */
 	private function emit_feed( array $node ): void {
-		$lines = isset( $node['lines'] ) ? max( 1, (int) $node['lines'] ) : 1;
+		$lines = Thermal_Bounds::clamp_int(
+			isset( $node['lines'] ) ? $node['lines'] : null,
+			Thermal_Bounds::FEED_LINES_MIN,
+			Thermal_Bounds::FEED_LINES_MIN,
+			Thermal_Bounds::FEED_LINES_MAX
+		);
 		for ( $index = 0; $index < $lines; $index++ ) {
 			$this->raw( array( 0x0a ) );
 		}
@@ -633,161 +646,6 @@ class Starprnt_Thermal_Emitter {
 	 */
 	private function newline(): void {
 		$this->raw( array( 0x0a ) );
-	}
-
-	/**
-	 * Normalize text by replacing non-ASCII typographic characters.
-	 *
-	 * @param string $value The input text.
-	 *
-	 * @return string The normalized text.
-	 */
-	private function normalize_text( string $value ): string {
-		$search  = array( "\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}", "\u{2212}" );
-		$value   = str_replace( $search, '-', $value );
-		$value   = str_replace( array( "\u{2018}", "\u{2019}" ), "'", $value );
-		$value   = str_replace( array( "\u{201C}", "\u{201D}" ), '"', $value );
-		$value   = str_replace( "\u{00A0}", ' ', $value );
-
-		return $value;
-	}
-
-	/**
-	 * Compute the display width of a string (full-width chars count as 2).
-	 *
-	 * @param string $value The input text.
-	 *
-	 * @return int The display width.
-	 */
-	private function display_width( string $value ): int {
-		$width = 0;
-		$chars = $this->split_chars( $value );
-		foreach ( $chars as $char ) {
-			$width += $this->is_full_width( $char ) ? 2 : 1;
-		}
-
-		return $width;
-	}
-
-	/**
-	 * Truncate a string to a maximum display width.
-	 *
-	 * @param string $value The input text.
-	 * @param int    $width The maximum display width.
-	 *
-	 * @return string The truncated text.
-	 */
-	private function truncate_display( string $value, int $width ): string {
-		$result = '';
-		$used   = 0;
-		$chars  = $this->split_chars( $value );
-		foreach ( $chars as $char ) {
-			$next = $this->is_full_width( $char ) ? 2 : 1;
-			if ( $used + $next > $width ) {
-				break;
-			}
-			$result .= $char;
-			$used    += $next;
-		}
-
-		return $result;
-	}
-
-	/**
-	 * Split a UTF-8 string into an array of characters.
-	 *
-	 * @param string $value The input text.
-	 *
-	 * @return array The characters.
-	 */
-	private function split_chars( string $value ): array {
-		if ( '' === $value ) {
-			return array();
-		}
-		if ( function_exists( 'mb_str_split' ) ) {
-			return mb_str_split( $value, 1, 'UTF-8' );
-		}
-		$chars = preg_split( '//u', $value, -1, PREG_SPLIT_NO_EMPTY );
-
-		return false === $chars ? array() : $chars;
-	}
-
-	/**
-	 * Whether a single character is full-width / CJK.
-	 *
-	 * @param string $char The single UTF-8 character.
-	 *
-	 * @return bool True when the character is full-width.
-	 */
-	private function is_full_width( string $char ): bool {
-		$code = $this->code_point( $char );
-		if ( $code < 0 ) {
-			return false;
-		}
-
-		return ( $code >= 0x1100 && $code <= 0x115f )
-			|| 0x2329 === $code
-			|| 0x232a === $code
-			|| ( $code >= 0x2e80 && $code <= 0xa4cf )
-			|| ( $code >= 0xac00 && $code <= 0xd7a3 )
-			|| ( $code >= 0xf900 && $code <= 0xfaff )
-			|| ( $code >= 0xfe10 && $code <= 0xfe19 )
-			|| ( $code >= 0xfe30 && $code <= 0xfe6f )
-			|| ( $code >= 0xff00 && $code <= 0xff60 )
-			|| ( $code >= 0xffe0 && $code <= 0xffe6 );
-	}
-
-	/**
-	 * Resolve the Unicode code point of a single character.
-	 *
-	 * @param string $char The single UTF-8 character.
-	 *
-	 * @return int The code point, or -1 when undetermined.
-	 */
-	private function code_point( string $char ): int {
-		if ( function_exists( 'mb_ord' ) ) {
-			// mb_ord() is typed int by stubs; cast guards a theoretical false (invalid
-			// char) to 0, which is_full_width() treats as not full-width.
-			return (int) mb_ord( $char, 'UTF-8' );
-		}
-		$length = strlen( $char );
-		if ( 1 === $length ) {
-			return ord( $char );
-		}
-		if ( 2 === $length ) {
-			return ( ( ord( $char[0] ) & 0x1f ) << 6 ) | ( ord( $char[1] ) & 0x3f );
-		}
-		if ( 3 === $length ) {
-			return ( ( ord( $char[0] ) & 0x0f ) << 12 ) | ( ( ord( $char[1] ) & 0x3f ) << 6 ) | ( ord( $char[2] ) & 0x3f );
-		}
-		if ( 4 === $length ) {
-			return ( ( ord( $char[0] ) & 0x07 ) << 18 ) | ( ( ord( $char[1] ) & 0x3f ) << 12 ) | ( ( ord( $char[2] ) & 0x3f ) << 6 ) | ( ord( $char[3] ) & 0x3f );
-		}
-
-		return -1;
-	}
-
-	/**
-	 * Extract the concatenated raw text of a node subtree.
-	 *
-	 * @param array $nodes The AST nodes.
-	 *
-	 * @return string The concatenated text.
-	 */
-	private function extract_text( array $nodes ): string {
-		$text = '';
-		foreach ( $nodes as $node ) {
-			if ( ! \is_array( $node ) ) {
-				continue;
-			}
-			if ( isset( $node['type'] ) && 'raw-text' === $node['type'] ) {
-				$text .= isset( $node['value'] ) ? (string) $node['value'] : '';
-			} elseif ( isset( $node['children'] ) && \is_array( $node['children'] ) ) {
-				$text .= $this->extract_text( $node['children'] );
-			}
-		}
-
-		return $text;
 	}
 
 	/**

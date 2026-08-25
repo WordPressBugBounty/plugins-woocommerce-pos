@@ -8,6 +8,8 @@
 namespace WCPOS\WooCommercePOS\Abstracts;
 
 use WCPOS\WooCommercePOS\Interfaces\StoreInterface;
+use WCPOS\WooCommercePOS\Services\Receipt_I18n_Labels;
+use WCPOS\WooCommercePOS\Services\Settings;
 use WCPOS\WooCommercePOS\Services\Store_Defaults;
 use WC_Countries;
 use function wc_format_country_state_string;
@@ -54,6 +56,7 @@ class Store extends \WC_Data implements StoreInterface {
 		'price_thousand_sep'          => '',
 		'price_decimal_sep'           => '',
 		'price_num_decimals'          => '',
+		'prevent_overselling'         => false,
 		'prices_include_tax'          => '',
 		'tax_based_on'                => '',
 		'tax_address'                 => array(
@@ -158,8 +161,28 @@ class Store extends \WC_Data implements StoreInterface {
 	 * Set WooCommerce POS settings.
 	 */
 	public function set_woocommerce_pos_settings() {
-		$this->set_prop( 'default_customer', woocommerce_pos_get_settings( 'general', 'default_customer' ) );
-		$this->set_prop( 'default_customer_is_cashier', woocommerce_pos_get_settings( 'general', 'default_customer_is_cashier' ) );
+		$this->set_prop( 'default_customer', Settings::instance()->default_customer_id() );
+		$this->set_prop( 'default_customer_is_cashier', Settings::instance()->default_customer_is_cashier() );
+		$this->set_prop( 'prevent_overselling', Settings::instance()->prevent_overselling_enabled() );
+	}
+
+	/**
+	 * Get the store data as an array.
+	 *
+	 * Extends the raw prop data with `receipt_i18n`, the receipt label
+	 * dictionary resolved for this store's locale. The client persists it on
+	 * the store record so offline/fallback receipt renders use the same
+	 * translated labels as server-built receipt payloads (issue mono#1252).
+	 * Computed here (not stored as a prop) so Pro's per-outlet locale
+	 * override is applied before resolution.
+	 *
+	 * @return array
+	 */
+	public function get_data() {
+		$data                 = parent::get_data();
+		$data['receipt_i18n'] = Receipt_I18n_Labels::get_labels( (string) $this->get_locale() );
+
+		return $data;
 	}
 
 	/**

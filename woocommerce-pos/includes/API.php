@@ -1,6 +1,6 @@
 <?php
 /**
- * WCPOS REST API Class, ie: /wcpos/v1/ endpoints.
+ * WCPOS REST API class.
  *
  * @author   Paul Kilmurray <paul@kilbot.com>
  *
@@ -10,8 +10,8 @@
 
 namespace WCPOS\WooCommercePOS;
 
-use Ramsey\Uuid\Uuid;
 use WCPOS\WooCommercePOS\Services\Auth;
+use WCPOS\WooCommercePOS\Services\Settings as SettingsService;
 use WP_HTTP_Response;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -21,6 +21,11 @@ use WP_REST_Server;
  * API class.
  */
 class API {
+	/**
+	 * WCPOS REST API namespaces.
+	 */
+	public const ROUTE_NAMESPACES = array( 'wcpos/v1', 'wcpos/v2' );
+
 	/**
 	 * WCPOS REST API namespaces and endpoints.
 	 *
@@ -35,6 +40,13 @@ class API {
 	 * @var array<string, string>
 	 */
 	protected $route_map = array();
+
+	/**
+	 * Route permission-gate classifier.
+	 *
+	 * @var API\Route_Classifier
+	 */
+	protected $route_classifier;
 
 	/**
 	 * Flag to check if authentication has been checked.
@@ -59,10 +71,6 @@ class API {
 	public function __construct() {
 		$this->register_routes();
 
-		// Allows requests from WCPOS Desktop and Mobile Apps.
-		add_filter( 'rest_allowed_cors_headers', array( $this, 'rest_allowed_cors_headers' ), 10, 1 );
-		add_filter( 'rest_pre_serve_request', array( $this, 'rest_pre_serve_request' ), 10, 4 );
-
 		/*
 		 * Adds authentication to for JWT bearer tokens
 		 * - We run determine_current_user at 20 to allow other plugins to run first
@@ -76,18 +84,47 @@ class API {
 		// These filters allow changes to the WC REST API response.
 		add_filter( 'rest_dispatch_request', array( $this, 'rest_dispatch_request' ), 10, 4 );
 		add_filter( 'rest_pre_dispatch', array( $this, 'rest_pre_dispatch' ), 10, 3 );
+		add_filter( 'rest_post_dispatch', array( $this, 'rest_post_dispatch' ), 10, 3 );
+	}
+
+	/**
+	 * Get the WCPOS REST API namespaces.
+	 *
+	 * @return string[] REST API namespaces.
+	 */
+	public function get_route_namespaces(): array {
+		/**
+		 * Filter the list of namespaces used in the WCPOS REST API.
+		 *
+		 * This filter is strictly additive: plugins can register additional WCPOS REST
+		 * API namespaces, but the core namespaces cannot be removed — the central
+		 * permission gate must keep covering every registered core route. Controllers
+		 * remain responsible for declaring any special route classifications within
+		 * added namespaces.
+		 *
+		 * @since 1.10.0
+		 *
+		 * @param string[] $namespaces REST API namespaces.
+		 */
+		$namespaces = apply_filters( 'woocommerce_pos_rest_namespaces', self::ROUTE_NAMESPACES );
+
+		return array_values( array_unique( array_merge( self::ROUTE_NAMESPACES, (array) $namespaces ) ) );
 	}
 
 	/**
 	 * Register routes for all controllers.
 	 */
 	public function register_routes(): void {
+		$route_namespaces       = $this->get_route_namespaces();
+		$this->route_classifier = new API\Route_Classifier( $route_namespaces );
+
 		/**
 		 * Filter the list of controller classes used in the WCPOS REST API.
 		 *
 		 * This filter allows customizing or extending the set of controller classes that handle
 		 * REST API routes for the WCPOS. By filtering these controllers, plugins can
 		 * modify existing endpoints or add new controllers for additional functionality.
+		 * Core legacy controllers use their versioned WCPOS\WooCommercePOS\API\V1 FQCNs.
 		 *
 		 * @since 1.5.0
 		 *
@@ -110,110 +147,136 @@ class API {
 			'woocommerce_pos_rest_api_controllers',
 			array(
 				// WCPOS rest api controllers.
-				'auth'                  => API\Auth::class,
-				'settings'              => API\Settings::class,
-				'cashier'               => API\Cashier::class,
-				'templates'             => API\Templates_Controller::class,
-				'receipts'              => API\Receipts_Controller::class,
-				'print_jobs'            => API\Print_Jobs_Controller::class,
+				'auth'                  => API\V1\Auth::class,
+				'settings'              => API\V1\Settings::class,
+				'cashier'               => API\V1\Cashier::class,
+				'templates'             => API\V1\Templates_Controller::class,
+				'receipts'              => API\V1\Receipts_Controller::class,
+				'print_jobs'            => API\V1\Print_Jobs_Controller::class,
 
 				// TODO: remove this?
-				'stores'                => API\Stores::class,
-				'extensions'            => API\Extensions::class,
-				'logs'                  => API\Logs::class,
-				'payment_gateways'      => API\Payment_Gateways::class,
-				'gateway_bootstrap'     => API\Gateway_Bootstrap_Controller::class,
-				'checkout'              => API\Checkout_Controller::class,
+				'stores'                => API\V1\Stores::class,
+				'extensions'            => API\V1\Extensions::class,
+				'logs'                  => API\V1\Logs::class,
+				'payment_gateways'      => API\V1\Payment_Gateways::class,
+				'gateway_bootstrap'     => API\V1\Gateway_Bootstrap_Controller::class,
+				'checkout'              => API\V1\Checkout_Controller::class,
 
 				// extend WC REST API controllers.
-				'products'              => API\Products_Controller::class,
-				'product_variations'    => API\Product_Variations_Controller::class,
-				'orders'                => API\Orders_Controller::class,
-				'customers'             => API\Customers_Controller::class,
-				'product_tags'          => API\Product_Tags_Controller::class,
-				'product_categories'    => API\Product_Categories_Controller::class,
-				'product_brands'        => API\Product_Brands_Controller::class,
-				'coupons'               => API\Coupons_Controller::class,
-				'taxes'                 => API\Taxes_Controller::class,
-				'shipping_methods'      => API\Shipping_Methods_Controller::class,
-				'tax_classes'           => API\Tax_Classes_Controller::class,
-				'order_statuses'        => API\Data_Order_Statuses_Controller::class,
+				'products'              => API\V1\Products_Controller::class,
+				'product_variations'    => API\V1\Product_Variations_Controller::class,
+				'orders'                => API\V1\Orders_Controller::class,
+				'customers'             => API\V1\Customers_Controller::class,
+				'product_tags'          => API\V1\Product_Tags_Controller::class,
+				'product_categories'    => API\V1\Product_Categories_Controller::class,
+				'product_brands'        => API\V1\Product_Brands_Controller::class,
+				'coupons'               => API\V1\Coupons_Controller::class,
+				'taxes'                 => API\V1\Taxes_Controller::class,
+				'shipping_methods'      => API\V1\Shipping_Methods_Controller::class,
+				'tax_classes'           => API\V1\Tax_Classes_Controller::class,
+				'order_statuses'        => API\V1\Data_Order_Statuses_Controller::class,
 			)
+		);
+
+		/**
+		 * Filter the wcpos/v2 service pass-through controllers (additive to the
+		 * frozen v1 surface — the legacy data controllers stay v1-only).
+		 *
+		 * Extensions that replace a v1 service through
+		 * `woocommerce_pos_rest_api_controllers` must carry their service onto
+		 * the v2 surface here with their own pass-through subclass (override
+		 * `$namespace = 'wcpos/v2'`), exactly as core does — the v2 map is not
+		 * derived from the v1 map, so a v1 replacement alone leaves the v2
+		 * twin serving core behavior.
+		 *
+		 * @since 1.10.0
+		 *
+		 * @param array $controllers Associative array of v2 service controller class names.
+		 */
+		$v2_classes = apply_filters(
+			'woocommerce_pos_rest_api_v2_controllers',
+			array(
+				'ping'              => API\V2\Ping::class,
+				'echo_probe'        => API\V2\Echo_Probe::class,
+				'site'              => API\V2\Site::class,
+				'auth'              => API\V2\Auth::class,
+				'settings'          => API\V2\Settings::class,
+				'cashier'           => API\V2\Cashier::class,
+				'templates'         => API\V2\Templates_Controller::class,
+				'receipts'          => API\V2\Receipts_Controller::class,
+				'print_jobs'        => API\V2\Print_Jobs_Controller::class,
+				'stores'            => API\V2\Stores::class,
+				'extensions'        => API\V2\Extensions::class,
+				'logs'              => API\V2\Logs::class,
+				'payment_gateways'  => API\V2\Payment_Gateways::class,
+				'gateway_bootstrap' => API\V2\Gateway_Bootstrap_Controller::class,
+				'checkout'          => API\V2\Checkout_Controller::class,
+				'order_email'       => API\V2\Order_Email_Controller::class,
+				'shipping_methods'  => API\V2\Shipping_Methods_Controller::class,
+				'tax_classes'       => API\V2\Tax_Classes_Controller::class,
+				'order_statuses'    => API\V2\Data_Order_Statuses_Controller::class,
+			)
+		);
+		foreach ( $v2_classes as $key => $class ) {
+			$classes[ 'v2-' . $key ] = $class;
+		}
+		$legacy_classifications = array(
+			'auth'       => array( 'public' => array( '/wcpos/v1/auth/test', '/wcpos/v1/auth/refresh' ) ),
+			'print_jobs' => array( 'printer_token' => array( '/wcpos/v1/print-jobs/cloudprnt', '/wcpos/v1/print-jobs/epson-sdp' ) ),
+			'receipts'   => array( 'permission_error_passthrough' => array( '/wcpos/v1/receipts/' ) ),
 		);
 
 		foreach ( $classes as $key => $class ) {
 			if ( class_exists( $class ) ) {
 				$this->controllers[ $key ] = new $class();
 				$this->controllers[ $key ]->register_routes();
+
+				if ( method_exists( $this->controllers[ $key ], 'wcpos_route_classifications' ) ) {
+					$this->route_classifier->merge( $this->controllers[ $key ]->wcpos_route_classifications() );
+				} elseif ( isset( $legacy_classifications[ $key ] ) ) {
+					$this->route_classifier->merge( $legacy_classifications[ $key ] );
+				}
 			}
 		}
 
+		// Sync classifications are independent of feature-gated route registration.
+		$this->route_classifier->merge( Sync\Api::route_classifications() );
+
 		// Build route map for use in rest_dispatch_request().
 		$rest_server = rest_get_server();
-		$all_routes  = $rest_server->get_routes( 'wcpos/v1' );
 
-		foreach ( $all_routes as $route_pattern => $route_handlers ) {
-			foreach ( $route_handlers as $route_handler ) {
-				$callback = $route_handler['callback'] ?? null;
+		foreach ( $route_namespaces as $route_namespace ) {
+			$all_routes = $rest_server->get_routes( $route_namespace );
 
-				// Extract the controller object from the callback.
-				$controller_obj = null;
-				if ( \is_array( $callback ) && isset( $callback[0] ) && \is_object( $callback[0] ) ) {
-					$controller_obj = $callback[0];
-				} elseif ( $callback instanceof \Closure ) {
-					// WC 10.5+ RestApiCache wraps callbacks in closures.
-					// Use reflection to extract the bound $this.
-					$ref            = new \ReflectionFunction( $callback );
-					$controller_obj = $ref->getClosureThis();
-				}
+			foreach ( $all_routes as $route_pattern => $route_handlers ) {
+				foreach ( $route_handlers as $route_handler ) {
+					$callback = $route_handler['callback'] ?? null;
 
-				if ( ! $controller_obj ) {
-					continue;
-				}
+					// Extract the controller object from the callback.
+					$controller_obj = null;
+					if ( \is_array( $callback ) && isset( $callback[0] ) && \is_object( $callback[0] ) ) {
+						$controller_obj = $callback[0];
+					} elseif ( $callback instanceof \Closure ) {
+						// WC 10.5+ RestApiCache wraps callbacks in closures.
+						// Use reflection to extract the bound $this.
+						$ref            = new \ReflectionFunction( $callback );
+						$controller_obj = $ref->getClosureThis();
+					}
 
-				// Find which controller key this object belongs to.
-				foreach ( $this->controllers as $key => $registered_controller ) {
-					if ( $controller_obj === $registered_controller ) {
-						$this->route_map[ $route_pattern ] = $key;
-						break;
+					if ( ! $controller_obj ) {
+						continue;
+					}
+
+					// Find which controller key this object belongs to.
+					foreach ( $this->controllers as $key => $registered_controller ) {
+						if ( $controller_obj === $registered_controller ) {
+							$this->route_map[ $route_pattern ] = $key;
+							break;
+						}
 					}
 				}
 			}
 		}
-	}
-
-	/**
-	 * Add CORS headers to the REST API response.
-	 *
-	 * @param string[] $allow_headers The list of request headers to allow.
-	 *
-	 * @return string[] $allow_headers
-	 */
-	public function rest_allowed_cors_headers( array $allow_headers ): array {
-		$allow_headers[] = 'X-WCPOS';
-		$allow_headers[] = 'X-HTTP-Method-Override';
-		$allow_headers[] = 'X-WCPOS-Idempotency-Key';
-
-		return $allow_headers;
-	}
-
-	/**
-	 * Add Access Control Allow Headers for POS app.
-	 *
-	 * NOTE: I have seen this filter called with NULL for $served, it should be a boolean.
-	 *
-	 * @param mixed            $served  Whether the request has already been served.
-	 *                                  Default false.
-	 * @param WP_HTTP_Response $result  Result to send to the client. Usually a `WP_REST_Response`.
-	 * @param WP_REST_Request  $request Request used to generate the response.
-	 * @param WP_REST_Server   $server  Server instance.
-	 *
-	 * @return bool $served
-	 */
-	public function rest_pre_serve_request( $served, WP_HTTP_Response $result, WP_REST_Request $request, WP_REST_Server $server ) {
-		$server->send_header( 'Access-Control-Allow-Origin', '*' );
-
-		return $served;
 	}
 
 	/**
@@ -323,24 +386,7 @@ class API {
 	 * @return false|string
 	 */
 	public function get_auth_header() {
-		// Check if HTTP_AUTHORIZATION is set and not empty
-		// (htaccess SetEnvIf can set an empty value when no header is present).
-		if ( ! empty( $_SERVER['HTTP_AUTHORIZATION'] ) ) {
-			return sanitize_text_field( wp_unslash( $_SERVER['HTTP_AUTHORIZATION'] ) );
-		}
-
-		// Check for alternative header in $_SERVER.
-		if ( ! empty( $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ) ) {
-			return sanitize_text_field( wp_unslash( $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ) );
-		}
-
-		// Check for authorization param in URL ($_GET).
-		if ( ! empty( $_GET['authorization'] ) ) {
-			return sanitize_text_field( wp_unslash( $_GET['authorization'] ) );
-		}
-
-		// Return false if none of the variables are set.
-		return false;
+		return Auth::instance()->get_auth_header();
 	}
 
 	/**
@@ -353,16 +399,12 @@ class API {
 	 * @return WP_REST_Response
 	 */
 	public function rest_index( WP_REST_Response $response ): WP_REST_Response {
-		$uuid = get_option( 'woocommerce_pos_uuid' );
-		if ( ! $uuid ) {
-			$uuid = Uuid::uuid4()->toString();
-			update_option( 'woocommerce_pos_uuid', $uuid );
-		}
+		$uuid                               = wcpos_get_site_uuid();
 		$response->data['uuid']             = $uuid;
 		$response->data['wp_version']       = get_bloginfo( 'version' );
 		$response->data['wc_version']       = WC()->version;
 		$response->data['wcpos_version']    = VERSION;
-		$response->data['use_jwt_as_param'] = woocommerce_pos_get_settings( 'tools', 'use_jwt_as_param' );
+		$response->data['use_jwt_as_param'] = SettingsService::instance()->use_jwt_as_param_enabled();
 
 		// Add WCPOS authentication endpoint to the response.
 		$response->data['authentication']['wcpos'] = array(
@@ -399,22 +441,38 @@ class API {
 	 * @return mixed
 	 */
 	public function rest_pre_dispatch( $result, $server, $request ) {
-		if ( strpos( $request->get_route(), '/wcpos/v1/' ) !== 0 ) {
+		if ( ! $this->route_classifier->in_wcpos_namespace( $request->get_route() ) ) {
 			return $result;
 		}
 
-		// Baseline permission gate: all POS endpoints require access_woocommerce_pos.
+		// Latch the till's store scope for the whole request (pro#425). Set
+		// unconditionally — including to null — so a scope never leaks from one
+		// dispatch into the next. Inner `wc/v3` forwards do not reach this line
+		// (they are outside the WCPOS namespace), which is exactly right: the
+		// OUTER request owns the scope and stamps it onto the inner ones.
+		\WCPOS\WooCommercePOS\Sync\Store_Scope::set_current(
+			\WCPOS\WooCommercePOS\Sync\Store_Scope::resolve( $request )
+		);
+
+		// CORS preflights carry no credentials (browsers strip Authorization from OPTIONS),
+		// so the permission gate must never answer them with 401 — a non-2xx preflight blocks
+		// every cross-origin standalone client from the entire namespace. WP core serves
+		// OPTIONS with route metadata and Rest_Cors::rest_pre_serve_request adds the CORS headers.
+		if ( 'OPTIONS' === $request->get_method() ) {
+			return $result;
+		}
+
+		// Baseline permission gate: POS endpoints require access_woocommerce_pos; the three
+		// sync admin operations instead use their route-level manage_woocommerce check.
 		// Exempt public auth, printer-token polling, and authenticated receipt denials that need
 		// the receipt-specific error code.
 		$route                               = $request->get_route();
-		$has_route_specific_permission_error = is_user_logged_in() && 0 === strpos( $route, '/wcpos/v1/receipts/' );
-		$is_public_auth_route                = \in_array( $route, array( '/wcpos/v1/auth/test', '/wcpos/v1/auth/refresh' ), true );
-		$is_printer_token_route             = \in_array( $route, array( '/wcpos/v1/print-jobs/cloudprnt', '/wcpos/v1/print-jobs/epson-sdp' ), true )
-			|| 0 === strpos( $route, '/wcpos/v1/print-jobs/cloudprnt/' )
-			|| 0 === strpos( $route, '/wcpos/v1/print-jobs/epson-sdp/' );
-		$is_relay_verification_route        = '/wcpos/v1/print-jobs/relay-verification' === $route;
+		$has_route_specific_permission_error = is_user_logged_in() && $this->route_classifier->is_permission_error_passthrough( $route );
+		$is_public_auth_route                = $this->route_classifier->is_public( $route );
+		$is_printer_token_route              = $this->route_classifier->is_printer_token( $route );
+		$is_sync_admin_route                 = is_user_logged_in() && current_user_can( 'manage_woocommerce' ) && $this->route_classifier->is_admin_op( $route );
 
-		if ( ! $is_public_auth_route && ! $has_route_specific_permission_error && ! $is_printer_token_route && ! $is_relay_verification_route ) {
+		if ( ! $is_public_auth_route && ! $has_route_specific_permission_error && ! $is_printer_token_route && ! $is_sync_admin_route ) {
 			if ( ! current_user_can( 'access_woocommerce_pos' ) ) {
 				if ( ! is_user_logged_in() ) {
 					return new \WP_Error(
@@ -433,6 +491,14 @@ class API {
 		}
 
 		$max_length = 10000;
+
+		// The sync sub-surface speaks its own wire contract (include = raw id
+		// list validated by its controllers); the wcpos_include/exclude rewrite
+		// below is a legacy extended-WC-controller workaround and must not
+		// mangle sync routes.
+		if ( $this->route_classifier->is_rewrite_exempt( $route ) ) {
+			return $result;
+		}
 
 		// Process 'include' parameter.
 		$include = $request->get_param( 'include' );
@@ -454,6 +520,35 @@ class API {
 	}
 
 	/**
+	 * Add the server pressure bucket to WCPOS REST responses.
+	 *
+	 * @param mixed           $response REST response.
+	 * @param WP_REST_Server  $server   REST server.
+	 * @param WP_REST_Request $request  REST request.
+	 *
+	 * @return mixed
+	 */
+	public function rest_post_dispatch( $response, $server, $request ) {
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		try {
+			if ( ! $response instanceof WP_HTTP_Response || ! $this->route_classifier->in_wcpos_namespace( $request->get_route() ) ) {
+				return $response;
+			}
+			$pressure_bucket = API\V2\Ping::pressure_bucket();
+			if ( null !== $pressure_bucket ) {
+				$response->header( 'X-WCPOS-Pressure', $pressure_bucket );
+			}
+		} catch ( \Throwable $e ) {
+			return $response;
+		}
+
+		return $response;
+	}
+
+	/**
 	 * Filters the REST API dispatch request result.
 	 *
 	 * @param mixed           $dispatch_result Dispatch result, will be used if not empty.
@@ -464,7 +559,7 @@ class API {
 	 * @return mixed
 	 */
 	public function rest_dispatch_request( $dispatch_result, $request, $route, $handler ) {
-		// Only process wcpos/v1 routes.
+		// Only process mapped WCPOS routes.
 		if ( ! isset( $this->route_map[ $route ] ) ) {
 			return $dispatch_result;
 		}
@@ -543,32 +638,12 @@ class API {
 	 * @return false|int|\WP_Error
 	 */
 	private function authenticate( $user_id ) {
-		// check if there is an auth header.
-		$auth_header = $this->get_auth_header();
-		if ( ! \is_string( $auth_header ) ) {
-			return $user_id;
+		$authenticated_user_id = Auth::instance()->authenticate_request();
+
+		if ( is_wp_error( $authenticated_user_id ) ) {
+			return false === $user_id ? $authenticated_user_id : $user_id;
 		}
 
-		// Extract Bearer token from Authorization Header.
-		list($token) = sscanf( $auth_header, 'Bearer %s' );
-
-		if ( $token ) {
-			$auth_service  = Auth::instance();
-			$decoded_token = $auth_service->validate_token( $token );
-
-			// Check if validate_token returned WP_Error and user_id is null.
-			if ( is_wp_error( $decoded_token ) && false === $user_id ) {
-				return $decoded_token;
-			}
-
-			// If the token is valid, set the user_id.
-			if ( ! is_wp_error( $decoded_token ) ) {
-				$user_id = $decoded_token->data->user->id;
-
-				return absint( $user_id );
-			}
-		}
-
-		return $user_id;
+		return false === $authenticated_user_id ? $user_id : $authenticated_user_id;
 	}
 }

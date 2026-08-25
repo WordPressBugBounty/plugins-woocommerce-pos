@@ -8,6 +8,8 @@
 namespace WCPOS\WooCommercePOS\Services;
 
 use WCPOS\WooCommercePOS\Abstracts\Store;
+use WCPOS\WooCommercePOS\Services\Settings\Access_Section;
+use WCPOS\WooCommercePOS\Sync\Pos_Uuid;
 use WP_User;
 
 /**
@@ -44,27 +46,19 @@ class Cashier {
 	/**
 	 * Get cashier UUID.
 	 *
-	 * Note: usermeta is shared across all sites in a network, this can cause issues in the POS.
-	 * We need to make sure that the cashier uuid is unique per site.
+	 * Delegates to Pos_Uuid — the sole authority for `_woocommerce_pos_uuid` — so
+	 * the /cashier endpoint and auth payloads serve the SAME identity as the
+	 * /customers endpoint. The POS client keys its RxDB documents on this uuid, so
+	 * a divergent value makes one person appear as two. Legacy multisite per-blog
+	 * uuids (minted by an old version of this method) are adopted network-wide by
+	 * the authority.
 	 *
 	 * @param WP_User $user User object.
 	 *
-	 * @return string UUID for the cashier.
+	 * @return string UUID for the cashier ('' only if WooCommerce customer data is unavailable).
 	 */
 	public function get_cashier_uuid( WP_User $user ): string {
-		$meta_key = '_woocommerce_pos_uuid';
-
-		if ( \function_exists( 'is_multisite' ) && is_multisite() ) {
-			$meta_key = $meta_key . '_' . get_current_blog_id();
-		}
-
-		$uuid = get_user_meta( $user->ID, $meta_key, true );
-		if ( ! $uuid ) {
-			$uuid = wp_generate_uuid4();
-			update_user_meta( $user->ID, $meta_key, $uuid );
-		}
-
-		return $uuid;
+		return Pos_Uuid::ensure_user_uuid( $user );
 	}
 
 	/**
@@ -89,6 +83,12 @@ class Cashier {
 			'display_name' => $user->display_name,
 			'nice_name'    => $user->user_nicename,
 			'roles'        => array_values( $user->roles ),
+			// Raw grants (role + user), the same vocabulary the POS Access settings
+			// screen reads and writes. user_can() is wrong here: the singular meta
+			// caps (edit_product, delete_product) cannot be checked without a post.
+			'capabilities' => array_values(
+				array_filter( Access_Section::capability_names(), fn( $cap ) => ! empty( $user->allcaps[ $cap ] ) )
+			),
 			'last_access'  => $last_access ? $last_access : '',
 			'avatar_url'   => get_avatar_url( $user->ID ),
 		);

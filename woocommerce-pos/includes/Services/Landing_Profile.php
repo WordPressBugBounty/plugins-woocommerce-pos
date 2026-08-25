@@ -89,7 +89,7 @@ class Landing_Profile {
 	 * @return array
 	 */
 	public function get_profile(): array {
-		$cached = $this->get_cached_metrics();
+		$cached = $this->get_metrics();
 		$user   = wp_get_current_user();
 
 		return array_merge(
@@ -97,7 +97,7 @@ class Landing_Profile {
 			array(
 				'wc_version'  => WC()->version,
 				'php_version' => PHP_VERSION,
-				'site_uuid'   => get_option( 'woocommerce_pos_uuid', '' ),
+				'site_uuid'   => wcpos_get_site_uuid(),
 				'user_uuid'   => get_user_meta( $user->ID, '_woocommerce_pos_uuid', true ),
 				'user_role'   => ! empty( $user->roles ) ? $user->roles[0] : '',
 				'site_domain'  => $this->get_url_host( home_url() ),
@@ -151,9 +151,13 @@ class Landing_Profile {
 	/**
 	 * Get cached expensive metrics, computing them if the cache is stale.
 	 *
+	 * Public because the analytics site profile reports the same store-size
+	 * numbers; sharing the cache keeps the count queries to one per hour
+	 * instead of one per consumer.
+	 *
 	 * @return array
 	 */
-	private function get_cached_metrics(): array {
+	public function get_metrics(): array {
 		$cached = get_transient( self::TRANSIENT_KEY );
 
 		if ( false !== $cached ) {

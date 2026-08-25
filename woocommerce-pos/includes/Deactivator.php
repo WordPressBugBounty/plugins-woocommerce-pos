@@ -52,11 +52,20 @@ class Deactivator {
 	 * Fired when the plugin is deactivated.
 	 */
 	public function single_deactivate(): void {
+		// Report churn before tearing anything down, while settings (and so the
+		// consent state) are still readable.
+		$lifecycle = new \WCPOS\WooCommercePOS\Services\Lifecycle_Events();
+		$lifecycle->report_deactivation();
+		$lifecycle->clear_schedule();
+
 		// remove pos capabilities.
 		$this->remove_pos_capability();
 
 		// stop the print-job retention purge.
 		wp_clear_scheduled_hook( \WCPOS\WooCommercePOS\Services\Print_Job_Service::PURGE_HOOK );
+
+		// stop the journal retention purge.
+		wp_clear_scheduled_hook( \WCPOS\WooCommercePOS\Sync\Sync_Journal_Purge::PURGE_HOOK );
 
 		// remove pos rewrite rule.
 		flush_rewrite_rules( false ); // false will not overwrite .htaccess.

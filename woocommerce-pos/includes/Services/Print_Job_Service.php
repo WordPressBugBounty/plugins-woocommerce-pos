@@ -19,6 +19,7 @@ class Print_Job_Service {
 	const META_FORMAT     = '_wcpos_pj_format';
 	const META_TEMPLATE   = '_wcpos_pj_template_id';
 	const META_ERROR      = '_wcpos_pj_error';
+	const META_RETRIED_TO = '_wcpos_pj_retried_to';
 	const META_CLAIMED_AT   = '_wcpos_pj_claimed_at';
 	const META_PN_KIND           = '_wcpos_pj_pn_kind';
 	const META_EXTERNAL_PROVIDER = '_wcpos_pj_external_provider';
@@ -28,6 +29,12 @@ class Print_Job_Service {
 	const META_AUTO_OPEN_DRAWER = '_wcpos_pj_auto_open_drawer';
 	const META_DRAWER_CONNECTOR = '_wcpos_pj_drawer_connector';
 	const META_DRAWER_ERROR     = '_wcpos_pj_drawer_error';
+
+	/**
+	 * The auto-print rule trigger (created|paid) that produced this job.
+	 * Absent on manual prints and on jobs created before triggers existed.
+	 */
+	const META_TRIGGER = '_wcpos_pj_trigger';
 	const CLAIM_LOCK_PREFIX     = 'wcpos_pj_claim_lock_';
 	const LIFECYCLE_LOCK_PREFIX = 'wcpos_pn_submit_lock_';
 	const LIFECYCLE_LOCK_TTL    = 120;
@@ -89,7 +96,7 @@ class Print_Job_Service {
 	/**
 	 * Create a print job.
 	 *
-	 * @param array $args printer_id (required), content_type, payload (base64), order_id, format, template_id, pn_kind.
+	 * @param array $args printer_id (required), content_type, payload (base64), order_id, format, template_id, pn_kind, trigger.
 	 *
 	 * @return int Job post ID.
 	 */
@@ -122,6 +129,9 @@ class Print_Job_Service {
 		}
 		if ( ! empty( $args['pn_kind'] ) ) {
 			update_post_meta( $id, self::META_PN_KIND, sanitize_text_field( (string) $args['pn_kind'] ) );
+		}
+		if ( ! empty( $args['trigger'] ) ) {
+			update_post_meta( $id, self::META_TRIGGER, sanitize_text_field( (string) $args['trigger'] ) );
 		}
 		if ( array_key_exists( 'auto_open_drawer', $args ) ) {
 			update_post_meta( $id, self::META_AUTO_OPEN_DRAWER, ! empty( $args['auto_open_drawer'] ) ? 'yes' : 'no' );
@@ -164,6 +174,7 @@ class Print_Job_Service {
 			'auto_open_drawer'  => 'yes' === (string) get_post_meta( $id, self::META_AUTO_OPEN_DRAWER, true ),
 			'drawer_connector'  => self::normalize_drawer_connector( (string) get_post_meta( $id, self::META_DRAWER_CONNECTOR, true ) ),
 			'drawer_error'      => (string) get_post_meta( $id, self::META_DRAWER_ERROR, true ),
+			'retried_to'        => (int) get_post_meta( $id, self::META_RETRIED_TO, true ),
 		);
 	}
 
@@ -217,37 +228,60 @@ class Print_Job_Service {
 	/**
 	 * Render the bytes a printer should fetch for a job.
 	 *
-	 * @param array $job Job array returned by get().
+	 * @param array  $job        Job array returned by get().
+	 * @param string $media_type Negotiated media type, when the transport chose one.
 	 *
 	 * @return string
 	 */
-	public function render_payload( array $job ): string {
+	public function render_payload( array $job, string $media_type = '' ): string {
+		return $this->render_job( $job, $media_type )['body'];
+	}
+
+	/**
+	 * Render a job, reporting peripherals its payload cannot carry.
+	 *
+	 * `$media_type` is the format a CloudPRNT printer picked out of the poll
+	 * response's offer. When it names a format the thermal pipeline can produce,
+	 * it overrides the provider's default wire format — this is what makes the
+	 * offer real rather than decorative. An empty string keeps the provider
+	 * default, which is what every non-negotiating caller passes.
+	 *
+	 * The `cut` and `drawer` keys are non-null only for command-free formats,
+	 * where the peripherals have to be requested out-of-band; see
+	 * Thermal_Renderer::render_with_control().
+	 *
+	 * @param array  $job        Job array returned by get().
+	 * @param string $media_type Negotiated media type, when the transport chose one.
+	 *
+	 * @return array{body:string, cut:string|null, drawer:string|null}
+	 */
+	public function render_job( array $job, string $media_type = '' ): array {
 		if ( ! empty( $job['order_id'] ) && ! empty( $job['template_id'] ) && ! empty( $job['pn_kind'] ) ) {
 			$template = self::load_template( (string) $job['template_id'] );
 			if ( null === $template ) {
-				return '';
+				return self::nothing_to_print();
 			}
 
 			$order = wc_get_order( (int) $job['order_id'] );
 			if ( ! $order ) {
-				return '';
+				return self::nothing_to_print();
 			}
 
 			if ( 'pdf' === $job['pn_kind'] ) {
 				try {
-					return ( new Template_Pdf_Service() )->render( $template, $order );
+					return self::in_band( ( new Template_Pdf_Service() )->render( $template, $order ) );
 				} catch ( \Throwable $e ) {
 					\WCPOS\WooCommercePOS\Logger::log(
 						sprintf( 'Cloud print: PrintNode PDF render failed for job %d: %s', (int) $job['id'], $e->getMessage() )
 					);
 
-					return '';
+					return self::nothing_to_print();
 				}
 			}
 
 			if ( 'escpos' === $job['pn_kind'] ) {
 				try {
-					return ( new \WCPOS\WooCommercePOS\Templates\Thermal\Thermal_Renderer() )->render(
+					return ( new \WCPOS\WooCommercePOS\Templates\Thermal\Thermal_Renderer() )->render_with_control(
 						$template,
 						$order,
 						'escpos',
@@ -258,33 +292,38 @@ class Print_Job_Service {
 						sprintf( 'Cloud print: PrintNode ESC/POS render failed for job %d: %s', (int) $job['id'], $e->getMessage() )
 					);
 
-					return '';
+					return self::nothing_to_print();
 				}
 			}
 
-			return '';
+			return self::nothing_to_print();
 		}
 
 		if ( ! empty( $job['order_id'] ) && ! empty( $job['template_id'] ) ) {
 			$template = self::load_template( (string) $job['template_id'] );
 			if ( null === $template ) {
-				return '';
+				return self::nothing_to_print();
 			}
 
 			$printer  = ( new Cloud_Print_Registry() )->get_printer( (string) $job['printer_id'] );
-			$provider = $printer['provider'] ?? 'star-cloudprnt';
+			$provider = Provider::normalize( \is_string( $printer['provider'] ?? null ) ? $printer['provider'] : null );
 			$wire     = Provider::wire_format( $provider, (string) ( $template['engine'] ?? '' ) );
 			if ( null === $wire ) {
-				return '';
+				return self::nothing_to_print();
+			}
+
+			$negotiated = '' === $media_type ? '' : Cloud_Print_Media_Types::wire_format( $media_type );
+			if ( '' !== $negotiated ) {
+				$wire = $negotiated;
 			}
 
 			$order = wc_get_order( (int) $job['order_id'] );
 			if ( ! $order ) {
-				return '';
+				return self::nothing_to_print();
 			}
 
 			try {
-				return ( new \WCPOS\WooCommercePOS\Templates\Thermal\Thermal_Renderer() )->render(
+				return ( new \WCPOS\WooCommercePOS\Templates\Thermal\Thermal_Renderer() )->render_with_control(
 					$template,
 					$order,
 					$wire,
@@ -298,25 +337,61 @@ class Print_Job_Service {
 					sprintf( 'Cloud print: thermal render failed for job %d: %s', (int) $job['id'], $e->getMessage() )
 				);
 
-				return '';
+				return self::nothing_to_print();
 			}
 		}
 
 		if ( ! empty( $job['order_id'] ) && ! empty( $job['format'] ) ) {
 			$order = wc_get_order( (int) $job['order_id'] );
 			if ( ! $order ) {
-				return '';
+				return self::nothing_to_print();
 			}
 
-			$data    = ( new Receipt_Data_Builder() )->build( $order, 'live' );
-			$adapter = ( new Receipt_Output_Adapter_Factory() )->create( (string) $job['format'] );
+			try {
+				$data    = ( new Receipt_Data_Builder() )->build( $order, 'live' );
+				$adapter = ( new Receipt_Output_Adapter_Factory() )->create( (string) $job['format'] );
 
-			return $adapter->transform( $data );
+				return self::in_band( $adapter->transform( $data ) );
+			} catch ( \Throwable $e ) {
+				// A stored job can carry a format the factory no longer supports
+				// (e.g. the removed fixed-layout starprnt placeholder). Fail closed
+				// like the thermal branch above: log and print nothing rather than
+				// letting the poll 500 with a claimed job stuck.
+				\WCPOS\WooCommercePOS\Logger::log(
+					sprintf( 'Cloud print: fixed-layout render failed for job %d: %s', (int) $job['id'], $e->getMessage() )
+				);
+
+				return self::nothing_to_print();
+			}
 		}
 
 		$payload = base64_decode( (string) $job['payload'], true );
 
-		return false === $payload ? '' : $payload;
+		return self::in_band( false === $payload ? '' : $payload );
+	}
+
+	/**
+	 * A render result whose payload carries its own cut and drawer commands.
+	 *
+	 * @param string $body The rendered payload.
+	 *
+	 * @return array{body:string, cut:string|null, drawer:string|null}
+	 */
+	private static function in_band( string $body ): array {
+		return array(
+			'body'   => $body,
+			'cut'    => null,
+			'drawer' => null,
+		);
+	}
+
+	/**
+	 * The render result for a job that produced nothing.
+	 *
+	 * @return array{body:string, cut:string|null, drawer:string|null}
+	 */
+	private static function nothing_to_print(): array {
+		return self::in_band( '' );
 	}
 
 	/**
@@ -334,7 +409,7 @@ class Print_Job_Service {
 	}
 
 	/**
-	 * Query jobs by printer, status and/or order (newest first).
+	 * Query jobs by printer, status and/or order (oldest first).
 	 *
 	 * @param array $filters printer_id, status, order_id, limit.
 	 *
@@ -420,6 +495,7 @@ class Print_Job_Service {
 					'order_id'     => (int) get_post_meta( $id, self::META_ORDER_ID, true ),
 					'format'       => (string) get_post_meta( $id, self::META_FORMAT, true ),
 					'template_id'  => (string) get_post_meta( $id, self::META_TEMPLATE, true ),
+					'retried_to'   => (int) get_post_meta( $id, self::META_RETRIED_TO, true ),
 				);
 			},
 			$ids
@@ -429,7 +505,7 @@ class Print_Job_Service {
 	/**
 	 * Count jobs matching the same filters query() accepts.
 	 *
-	 * @param array $filters printer_id / status / order_id / template_id.
+	 * @param array $filters printer_id / status / order_id / template_id / trigger / exclude_retried.
 	 *
 	 * @return int
 	 */
@@ -455,7 +531,7 @@ class Print_Job_Service {
 	 * refreshes every 30 seconds, so its summary must cost one query no
 	 * matter how many printers are registered.
 	 *
-	 * @return array<string, array<string, array{count: int, oldest_gmt: string}>> printer_id => status => stats.
+	 * @return array<string, array<string, array{count: int, unresolved_count: int, oldest_gmt: string}>> printer_id => status => stats.
 	 */
 	public function status_summary(): array {
 		global $wpdb;
@@ -464,14 +540,19 @@ class Print_Job_Service {
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT printer.meta_value AS printer_id, status.meta_value AS job_status,
-						COUNT(DISTINCT p.ID) AS jobs, MIN(p.post_date_gmt) AS oldest_gmt
+						COUNT(DISTINCT p.ID) AS jobs,
+						COUNT(DISTINCT CASE WHEN status.meta_value = %s AND retried.post_id IS NULL THEN p.ID END) AS unresolved_jobs,
+						MIN(p.post_date_gmt) AS oldest_gmt
 				 FROM {$wpdb->posts} p
 				 INNER JOIN {$wpdb->postmeta} printer ON printer.post_id = p.ID AND printer.meta_key = %s
 				 INNER JOIN {$wpdb->postmeta} status ON status.post_id = p.ID AND status.meta_key = %s
+				 LEFT JOIN {$wpdb->postmeta} retried ON retried.post_id = p.ID AND retried.meta_key = %s
 				 WHERE p.post_type = %s AND p.post_status = 'publish'
 				 GROUP BY printer.meta_value, status.meta_value",
+				self::STATUS_FAILED,
 				self::META_PRINTER,
 				self::META_STATUS,
+				self::META_RETRIED_TO,
 				self::POST_TYPE
 			)
 		);
@@ -479,8 +560,9 @@ class Print_Job_Service {
 		$summary = array();
 		foreach ( (array) $rows as $row ) {
 			$summary[ (string) $row->printer_id ][ (string) $row->job_status ] = array(
-				'count'      => (int) $row->jobs,
-				'oldest_gmt' => (string) $row->oldest_gmt,
+				'count'            => (int) $row->jobs,
+				'unresolved_count' => (int) $row->unresolved_jobs,
+				'oldest_gmt'       => (string) $row->oldest_gmt,
 			);
 		}
 
@@ -627,9 +709,16 @@ class Print_Job_Service {
 	private function filters_to_meta_query( array $filters ): array {
 		$meta_query = array();
 		if ( ! empty( $filters['printer_id'] ) ) {
+			// Same contract as status below: one printer matches exactly, a
+			// list becomes an IN clause. sanitize_text_field() flattens an
+			// array to '', so without this a printer_id list matched nothing.
+			$printer_id   = \is_array( $filters['printer_id'] )
+				? array_map( 'sanitize_text_field', $filters['printer_id'] )
+				: sanitize_text_field( $filters['printer_id'] );
 			$meta_query[] = array(
-				'key'   => self::META_PRINTER,
-				'value' => sanitize_text_field( $filters['printer_id'] ),
+				'key'     => self::META_PRINTER,
+				'value'   => $printer_id,
+				'compare' => \is_array( $printer_id ) ? 'IN' : '=',
 			);
 		}
 		if ( ! empty( $filters['status'] ) ) {
@@ -638,11 +727,31 @@ class Print_Job_Service {
 			$status       = \is_array( $filters['status'] )
 				? array_map( 'sanitize_text_field', $filters['status'] )
 				: sanitize_text_field( $filters['status'] );
-			$meta_query[] = array(
-				'key'     => self::META_STATUS,
-				'value'   => $status,
-				'compare' => \is_array( $status ) ? 'IN' : '=',
-			);
+			if ( ! empty( $filters['exclude_retried'] ) && \in_array( self::STATUS_FAILED, (array) $status, true ) ) {
+				$active_statuses = array_values( array_diff( (array) $status, array( self::STATUS_FAILED ) ) );
+				$status_query    = array( 'relation' => 'OR' );
+				if ( ! empty( $active_statuses ) ) {
+					$status_query[] = $this->status_clause( $active_statuses );
+				}
+				$status_query[] = array(
+					'relation' => 'AND',
+					array(
+						'key'   => self::META_STATUS,
+						'value' => self::STATUS_FAILED,
+					),
+					array(
+						'key'     => self::META_RETRIED_TO,
+						'compare' => 'NOT EXISTS',
+					),
+				);
+				$meta_query[] = $status_query;
+			} else {
+				$meta_query[] = array(
+					'key'     => self::META_STATUS,
+					'value'   => $status,
+					'compare' => \is_array( $status ) ? 'IN' : '=',
+				);
+			}
 		}
 		if ( ! empty( $filters['order_id'] ) ) {
 			$meta_query[] = array(
@@ -655,6 +764,22 @@ class Print_Job_Service {
 			$meta_query[] = array(
 				'key'   => self::META_TEMPLATE,
 				'value' => sanitize_text_field( (string) $filters['template_id'] ),
+			);
+		}
+		if ( ! empty( $filters['trigger'] ) ) {
+			// Jobs attributable to this trigger: the same recorded trigger, or
+			// no trigger at all — manual prints and pre-trigger jobs count
+			// toward every rule so they keep suppressing auto reprints.
+			$meta_query[] = array(
+				'relation' => 'OR',
+				array(
+					'key'   => self::META_TRIGGER,
+					'value' => sanitize_text_field( (string) $filters['trigger'] ),
+				),
+				array(
+					'key'     => self::META_TRIGGER,
+					'compare' => 'NOT EXISTS',
+				),
 			);
 		}
 
@@ -670,6 +795,23 @@ class Print_Job_Service {
 	public function set_status( int $id, string $status ): void {
 		update_post_meta( $id, self::META_STATUS, sanitize_text_field( $status ) );
 		$this->finalize_status_change( $id, $status );
+	}
+
+	/**
+	 * Mark a source job as retried and discard its dead payload.
+	 *
+	 * @param int $id             Source job ID.
+	 * @param int $replacement_id Replacement job ID.
+	 *
+	 * @return bool Whether the retry was recorded.
+	 */
+	public function mark_retried( int $id, int $replacement_id ): bool {
+		if ( ! update_post_meta( $id, self::META_RETRIED_TO, $replacement_id ) ) {
+			return false;
+		}
+		$this->strip_payload( $id );
+
+		return true;
 	}
 
 	/**
@@ -690,14 +832,23 @@ class Print_Job_Service {
 			// job, and a raster receipt is hundreds of KB. The row survives
 			// with metadata only — that's all the duplicate-trigger guard
 			// and the queue's history view need. Failed jobs keep their
-			// payload so Retry can copy it.
-			wp_update_post(
-				array(
-					'ID'           => $id,
-					'post_content' => '',
-				)
-			);
+			// payload so Retry can copy it until a replacement is created.
+			$this->strip_payload( $id );
 		}
+	}
+
+	/**
+	 * Strip a job's stored payload while retaining its metadata.
+	 *
+	 * @param int $id Job ID.
+	 */
+	private function strip_payload( int $id ): void {
+		wp_update_post(
+			array(
+				'ID'           => $id,
+				'post_content' => '',
+			)
+		);
 	}
 
 	/**

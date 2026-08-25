@@ -12,6 +12,8 @@
 
 namespace WCPOS\WooCommercePOS\Templates\Thermal;
 
+use WCPOS\WooCommercePOS\Templates\Barcode_Symbology;
+
 /**
  * Star_Markup_Thermal_Emitter class.
  */
@@ -117,7 +119,12 @@ class Star_Markup_Thermal_Emitter {
 				$this->buffer .= '[cut]';
 				break;
 			case 'feed':
-				$lines = isset( $node['lines'] ) ? max( 1, (int) $node['lines'] ) : 1;
+				$lines = Thermal_Bounds::clamp_int(
+					isset( $node['lines'] ) ? $node['lines'] : null,
+					Thermal_Bounds::FEED_LINES_MIN,
+					Thermal_Bounds::FEED_LINES_MIN,
+					Thermal_Bounds::FEED_LINES_MAX
+				);
 				$this->buffer .= str_repeat( '[feed]', $lines );
 				break;
 			case 'drawer':
@@ -195,15 +202,15 @@ class Star_Markup_Thermal_Emitter {
 	 */
 	private function emit_row( array $node ): void {
 		$cols   = isset( $node['children'] ) && \is_array( $node['children'] ) ? $node['children'] : array();
-		$widths = $this->resolve_row_widths( $cols );
+		$widths = Thermal_Text_Layout::resolve_row_widths( $cols, $this->columns );
 
 		$line = '';
 		foreach ( $cols as $index => $col ) {
 			$width    = isset( $widths[ $index ] ) ? $widths[ $index ] : 1;
 			$children = isset( $col['children'] ) && \is_array( $col['children'] ) ? $col['children'] : array();
-			$text     = $this->truncate( $this->extract_text( $children ), $width );
+			$text     = Thermal_Text_Layout::truncate_display( Thermal_Text_Layout::extract_text( $children ), $width );
 			$markup   = $this->render_inline( $children, $width );
-			$pad      = max( 0, $width - $this->display_width( $text ) );
+			$pad      = max( 0, $width - Thermal_Text_Layout::display_width( $text ) );
 			$align    = isset( $col['align'] ) ? $col['align'] : 'left';
 			$line .= ( 'right' === $align )
 				? str_repeat( ' ', $pad ) . $markup
@@ -211,43 +218,6 @@ class Star_Markup_Thermal_Emitter {
 		}
 
 		$this->buffer .= '[fixedWidth: on]' . $line . '[fixedWidth: off]' . "\n";
-	}
-
-	/**
-	 * Resolve concrete column widths for a row, splitting star columns evenly.
-	 *
-	 * @param array $cols Column AST nodes.
-	 *
-	 * @return array Integer widths indexed by column.
-	 */
-	private function resolve_row_widths( array $cols ): array {
-		$fixed_total = 0;
-		$star_count  = 0;
-		foreach ( $cols as $col ) {
-			if ( isset( $col['width'] ) && '*' === $col['width'] ) {
-				++$star_count;
-			} else {
-				$fixed_total += isset( $col['width'] ) ? (int) $col['width'] : 0;
-			}
-		}
-
-		$remaining  = max( 0, $this->columns - $fixed_total );
-		$star_width = $star_count > 0 ? (int) floor( $remaining / $star_count ) : 0;
-		$remainder  = $star_count > 0 ? $remaining - ( $star_width * $star_count ) : 0;
-
-		$widths     = array();
-		$star_index = 0;
-		foreach ( $cols as $index => $col ) {
-			if ( isset( $col['width'] ) && '*' === $col['width'] ) {
-				++$star_index;
-				$extra            = ( $star_index === $star_count ) ? $remainder : 0;
-				$widths[ $index ] = max( 1, $star_width + $extra );
-			} else {
-				$widths[ $index ] = isset( $col['width'] ) ? (int) $col['width'] : 0;
-			}
-		}
-
-		return $widths;
 	}
 
 	/**
@@ -268,8 +238,8 @@ class Star_Markup_Thermal_Emitter {
 	 */
 	private function emit_barcode( array $node ): void {
 		$value = isset( $node['value'] ) ? (string) $node['value'] : '';
-		$type  = isset( $node['barcode_type'] ) ? strtolower( (string) $node['barcode_type'] ) : 'code128';
-		$this->buffer .= sprintf( '[barcode: type %s; data "%s"; hri]', $this->barcode_type( $type ), $this->data_escape( $value ) );
+		$type  = isset( $node['barcode_type'] ) ? (string) $node['barcode_type'] : 'code128';
+		$this->buffer .= sprintf( '[barcode: type %s; data "%s"; hri]', Barcode_Symbology::star_markup_name( $type ), $this->data_escape( $value ) );
 	}
 
 	/**
@@ -281,19 +251,6 @@ class Star_Markup_Thermal_Emitter {
 		$value = isset( $node['value'] ) ? (string) $node['value'] : '';
 		$cell  = isset( $node['size'] ) ? max( 1, min( 8, (int) $node['size'] ) ) : 3;
 		$this->buffer .= sprintf( '[barcode: type qr; data "%s"; cell %d; ec medium]', $this->data_escape( $value ), $cell );
-	}
-
-	/**
-	 * Map a parser barcode type to a Star markup barcode type.
-	 *
-	 * @param string $type Parser barcode type.
-	 *
-	 * @return string
-	 */
-	private function barcode_type( string $type ): string {
-		$allowed = array( 'code128', 'code39', 'code93', 'ean13', 'ean8', 'upca', 'upce', 'itf', 'nw7' );
-
-		return \in_array( $type, $allowed, true ) ? $type : 'code128';
 	}
 
 	/**
@@ -338,29 +295,6 @@ class Star_Markup_Thermal_Emitter {
 	 */
 	private function data_escape( string $value ): string {
 		return str_replace( array( '\\', '"' ), array( '\\\\', '\\"' ), $value );
-	}
-
-	/**
-	 * Concatenate the raw text of a node subtree.
-	 *
-	 * @param array $nodes AST nodes.
-	 *
-	 * @return string
-	 */
-	private function extract_text( array $nodes ): string {
-		$text = '';
-		foreach ( $nodes as $node ) {
-			if ( ! \is_array( $node ) ) {
-				continue;
-			}
-			if ( isset( $node['type'] ) && 'raw-text' === $node['type'] ) {
-				$text .= isset( $node['value'] ) ? (string) $node['value'] : '';
-			} elseif ( isset( $node['children'] ) && \is_array( $node['children'] ) ) {
-				$text .= $this->extract_text( $node['children'] );
-			}
-		}
-
-		return $text;
 	}
 
 	/**
@@ -412,8 +346,8 @@ class Star_Markup_Thermal_Emitter {
 		$type = isset( $node['type'] ) ? (string) $node['type'] : '';
 
 		if ( 'raw-text' === $type ) {
-			$text       = $this->truncate( isset( $node['value'] ) ? (string) $node['value'] : '', $remaining );
-			$remaining -= $this->display_width( $text );
+			$text       = Thermal_Text_Layout::truncate_display( isset( $node['value'] ) ? (string) $node['value'] : '', $remaining );
+			$remaining -= Thermal_Text_Layout::display_width( $text );
 
 			return $this->escape( $text );
 		}
@@ -445,56 +379,5 @@ class Star_Markup_Thermal_Emitter {
 		}
 
 		return $wrapped;
-	}
-
-	/**
-	 * Display width of a string (full-width chars count as 2).
-	 *
-	 * @param string $value Text.
-	 *
-	 * @return int
-	 */
-	private function display_width( string $value ): int {
-		$chars = function_exists( 'mb_str_split' ) ? mb_str_split( $value, 1, 'UTF-8' ) : preg_split( '//u', $value, -1, PREG_SPLIT_NO_EMPTY );
-		if ( false === $chars ) {
-			$chars = array();
-		}
-		$width = 0;
-		foreach ( $chars as $char ) {
-			$code   = function_exists( 'mb_ord' ) ? (int) mb_ord( $char, 'UTF-8' ) : 0;
-			$width += ( $code >= 0x1100 && $code <= 0x115f ) || ( $code >= 0x2e80 && $code <= 0xa4cf )
-				|| ( $code >= 0xac00 && $code <= 0xd7a3 ) || ( $code >= 0xf900 && $code <= 0xfaff )
-				|| ( $code >= 0xff00 && $code <= 0xff60 ) ? 2 : 1;
-		}
-
-		return $width;
-	}
-
-	/**
-	 * Truncate a string to a maximum display width.
-	 *
-	 * @param string $value Text.
-	 * @param int    $width Max display width.
-	 *
-	 * @return string
-	 */
-	private function truncate( string $value, int $width ): string {
-		$chars = function_exists( 'mb_str_split' ) ? mb_str_split( $value, 1, 'UTF-8' ) : preg_split( '//u', $value, -1, PREG_SPLIT_NO_EMPTY );
-		if ( false === $chars ) {
-			$chars = array();
-		}
-
-		$result = '';
-		$used   = 0;
-		foreach ( $chars as $char ) {
-			$next = $this->display_width( $char );
-			if ( $used + $next > $width ) {
-				break;
-			}
-			$result .= $char;
-			$used   += $next;
-		}
-
-		return $result;
 	}
 }

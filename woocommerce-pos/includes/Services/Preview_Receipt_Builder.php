@@ -22,13 +22,6 @@ use WCPOS\WooCommercePOS\Abstracts\Store;
 class Preview_Receipt_Builder {
 
 	/**
-	 * POS store object used to populate store fields.
-	 *
-	 * @var object
-	 */
-	private $pos_store;
-
-	/**
 	 * Shared store resolver.
 	 *
 	 * @var Receipt_Store_Resolver
@@ -520,8 +513,7 @@ class Preview_Receipt_Builder {
 		if ( ! \is_object( $resolved_store ) ) {
 			$resolved_store = wcpos_get_store();
 		}
-		$this->pos_store      = \is_object( $resolved_store ) ? $resolved_store : new Store();
-		$this->store_resolver = new Receipt_Store_Resolver( $this->pos_store );
+		$this->store_resolver = new Receipt_Store_Resolver( \is_object( $resolved_store ) ? $resolved_store : new Store() );
 		$currency             = $this->resolve_currency();
 		$display_incl         = 'incl' === $this->store_resolver->resolve_store_option_string(
 			'get_tax_display_cart',
@@ -722,6 +714,7 @@ class Preview_Receipt_Builder {
 			'currency'      => $currency,
 			'customer_note' => __( 'Please gift wrap this order. Thank you!', 'woocommerce-pos' ),
 			'wc_status'     => 'completed',
+			'status_label'  => wc_get_order_status_name( 'completed' ),
 			'created_via'   => 'woocommerce-pos',
 			'created'       => Receipt_Date_Formatter::from_timestamp( $created_timestamp, $date_timezone, $date_locale ),
 			'paid'          => Receipt_Date_Formatter::from_timestamp( $paid_timestamp, $date_timezone, $date_locale ),
@@ -795,6 +788,8 @@ class Preview_Receipt_Builder {
 			'total_excl'              => $total_excl,
 			'paid_total'              => $total_incl,
 			'change_total'            => $change_total,
+			'refund_total'            => 0.0,
+			'net_total'               => 0.0,
 			'total_qty'               => $total_qty,
 			'line_count'              => $line_count,
 		);
@@ -833,48 +828,50 @@ class Preview_Receipt_Builder {
 		$presentation_hints = $this->store_resolver->build_presentation_hints( $currency, $prices_include_tax );
 		$tax                = $this->store_resolver->build_tax_section();
 
-		$fiscal = array(
-			'immutable_id'      => '12345:42',
-			'receipt_number'    => '00042',
-			'sequence'          => 42,
-			'hash'              => 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2',
-			'qr_payload'        => 'https://example.com/verify?id=SAMPLE-001',
-			'tax_agency_code'   => 'SAMPLE',
-			'signed_at'         => gmdate( 'Y-m-d\TH:i:s\Z' ),
-			'signature_excerpt' => 'A1B2',
-			'document_label'    => /* translators: Sample receipt label or value used in receipt template previews. */ __( 'Tax Receipt', 'woocommerce-pos' ),
-			'is_reprint'        => false,
-			'reprint_count'     => 0,
-			'extra_fields'      => array(
-				array(
-					'label' => /* translators: Sample receipt label or value used in receipt template previews. */ __( 'Tax ID', 'woocommerce-pos' ),
-					'value' => 'XX-1234567',
+		$fiscal = Receipt_Payload_Assembler::fiscal(
+			array(
+				'immutable_id'      => '12345:42',
+				'receipt_number'    => '00042',
+				'sequence'          => 42,
+				'hash'              => 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2',
+				'qr_payload'        => 'https://example.com/verify?id=SAMPLE-001',
+				'tax_agency_code'   => 'SAMPLE',
+				'signed_at'         => gmdate( 'Y-m-d\TH:i:s\Z' ),
+				'signature_excerpt' => 'A1B2',
+				'document_label'    => /* translators: Sample receipt label or value used in receipt template previews. */ __( 'Tax Receipt', 'woocommerce-pos' ),
+				'is_reprint'        => false,
+				'reprint_count'     => 0,
+				'extra_fields'      => array(
+					array(
+						'label' => /* translators: Sample receipt label or value used in receipt template previews. */ __( 'Tax ID', 'woocommerce-pos' ),
+						'value' => 'XX-1234567',
+					),
+					array(
+						'label' => /* translators: Sample receipt label or value used in receipt template previews. */ __( 'Auth Code', 'woocommerce-pos' ),
+						'value' => 'ABC-789',
+					),
 				),
-				array(
-					'label' => /* translators: Sample receipt label or value used in receipt template previews. */ __( 'Auth Code', 'woocommerce-pos' ),
-					'value' => 'ABC-789',
-				),
-			),
+			)
 		);
 
-		return array(
-			'order'              => $order,
-			'store'              => $store,
-			'cashier'            => $cashier,
-			'customer'           => $customer,
-			'lines'              => $lines,
-			'fees'               => $fees,
-			'shipping'           => $shipping,
-			'discounts'          => $discounts,
-			'totals'             => $totals,
-			'tax'                => $tax,
-			'tax_summary'        => $tax_summary,
-			'has_tax_summary'    => ! empty( $tax_summary ),
-			'payments'           => $payments,
-			'refunds'            => $refunds,
-			'fiscal'             => $fiscal,
-			'presentation_hints' => $presentation_hints,
-			'i18n'               => Receipt_I18n_Labels::get_labels( $presentation_hints['locale'] ?? '' ),
+		return Receipt_Payload_Assembler::assemble(
+			array(
+				'order'              => $order,
+				'store'              => $store,
+				'cashier'            => $cashier,
+				'customer'           => $customer,
+				'lines'              => $lines,
+				'fees'               => $fees,
+				'shipping'           => $shipping,
+				'discounts'          => $discounts,
+				'totals'             => $totals,
+				'tax'                => $tax,
+				'tax_summary'        => $tax_summary,
+				'payments'           => $payments,
+				'refunds'            => $refunds,
+				'fiscal'             => $fiscal,
+				'presentation_hints' => $presentation_hints,
+			)
 		);
 	}
 
@@ -884,82 +881,24 @@ class Preview_Receipt_Builder {
 	 * @return array Store data with name, address, branding, and policy fields.
 	 */
 	private function get_store_info(): array {
-		$pos_store = $this->pos_store;
-		$store_id        = (int) $this->store_resolver->get_store_value( 'get_id', 0 );
-		$store_name      = (string) $this->store_resolver->get_store_value( 'get_name', '' );
-		$store_address   = (string) $this->store_resolver->get_store_value( 'get_store_address', '' );
-		$store_address_2 = (string) $this->store_resolver->get_store_value( 'get_store_address_2', '' );
-		$store_city      = (string) $this->store_resolver->get_store_value( 'get_store_city', '' );
-		$store_postcode  = (string) $this->store_resolver->get_store_value( 'get_store_postcode', '' );
-		$store_country   = (string) $this->store_resolver->get_store_value( 'get_store_country', '' );
-		$store_state     = (string) $this->store_resolver->get_store_value( 'get_store_state', '' );
-		$store_phone     = (string) $this->store_resolver->get_store_value( 'get_phone', '' );
-		$store_email     = (string) $this->store_resolver->get_store_value( 'get_email', '' );
-		$store_tax_ids   = $this->store_resolver->get_store_value( 'get_tax_ids', array() );
-		$store_tax_ids   = is_array( $store_tax_ids ) ? $store_tax_ids : array();
-		$store_tax_ids   = Receipt_Store_Resolver::with_store_tax_id_labels( $store_tax_ids, $this->store_resolver->resolve_locale() );
-
-		$store_address_parts = array(
-			'address_1' => $store_address,
-			'address_2' => $store_address_2,
-			'city'      => $store_city,
-			'state'     => $store_state,
-			'postcode'  => $store_postcode,
-			'country'   => $store_country,
+		return $this->store_resolver->build_store_section(
+			array(
+				// Sample content stands in wherever the store has nothing configured,
+				// so preview templates always have every section to lay out.
+				'opening_hours'           => array(
+					'0' => array( '09:00', '17:00' ),
+					'1' => array( '09:00', '17:00' ),
+					'2' => array( '09:00', '17:00' ),
+					'3' => array( '09:00', '17:00' ),
+					'4' => array( '09:00', '17:00' ),
+					'5' => array( '10:00', '16:00' ),
+					'6' => array(),
+				),
+				'personal_notes'          => /* translators: Sample receipt label or value used in receipt template previews. */ __( 'Thank you for shopping with us! We appreciate your business.', 'woocommerce-pos' ),
+				'policies_and_conditions' => /* translators: Sample receipt label or value used in receipt template previews. */ __( 'Returns accepted within 30 days with original receipt. Items must be unused and in original packaging.', 'woocommerce-pos' ),
+				'footer_imprint'          => /* translators: Sample receipt label or value used in receipt template previews. */ __( 'Thank you for your purchase!', 'woocommerce-pos' ),
+			)
 		);
-
-		$store = array(
-			'id'            => $store_id,
-			'name'          => '' !== $store_name ? $store_name : get_bloginfo( 'name' ),
-			'address'       => $store_address_parts,
-			'address_lines' => Receipt_Store_Resolver::compose_address_lines( $store_address_parts ),
-			'tax_ids'       => $store_tax_ids,
-			'phone'         => $store_phone,
-			'email'         => $store_email,
-		);
-
-		$opening_hours_raw       = $this->store_resolver->get_store_value( 'get_opening_hours', array() );
-		$personal_notes          = (string) $this->store_resolver->get_store_value( 'get_personal_notes', '' );
-		$policies_and_conditions = (string) $this->store_resolver->get_store_value( 'get_policies_and_conditions', '' );
-		$footer_imprint          = (string) $this->store_resolver->get_store_value( 'get_footer_imprint', '' );
-
-		if ( ! empty( $opening_hours_raw ) && \is_array( $opening_hours_raw ) ) {
-			$store['opening_hours']          = Opening_Hours_Formatter::format_compact( $opening_hours_raw );
-			$store['opening_hours_vertical'] = Opening_Hours_Formatter::format_vertical( $opening_hours_raw );
-			$store['opening_hours_inline']   = Opening_Hours_Formatter::format_inline( $opening_hours_raw );
-		} elseif ( \is_string( $opening_hours_raw ) && '' !== trim( $opening_hours_raw ) ) {
-			$store['opening_hours']          = $opening_hours_raw;
-			$store['opening_hours_vertical'] = null;
-			$store['opening_hours_inline']   = null;
-		} else {
-			// Sample hours for preview when none configured.
-			$opening_hours_raw = array(
-				'0' => array( '09:00', '17:00' ),
-				'1' => array( '09:00', '17:00' ),
-				'2' => array( '09:00', '17:00' ),
-				'3' => array( '09:00', '17:00' ),
-				'4' => array( '09:00', '17:00' ),
-				'5' => array( '10:00', '16:00' ),
-				'6' => array(),
-			);
-			$store['opening_hours']          = Opening_Hours_Formatter::format_compact( $opening_hours_raw );
-			$store['opening_hours_vertical'] = Opening_Hours_Formatter::format_vertical( $opening_hours_raw );
-			$store['opening_hours_inline']   = Opening_Hours_Formatter::format_inline( $opening_hours_raw );
-		}
-		$store['logo']                    = Store_Logo_Resolver::resolve( $pos_store );
-		$opening_hours_notes              = (string) $this->store_resolver->get_store_value( 'get_opening_hours_notes', '' );
-		$store['opening_hours_notes']     = '' !== $opening_hours_notes ? $opening_hours_notes : null;
-		$store['personal_notes']          = ( null !== $personal_notes && '' !== $personal_notes )
-			? $personal_notes
-			: __( 'Thank you for shopping with us! We appreciate your business.', 'woocommerce-pos' );
-		$store['policies_and_conditions'] = ( null !== $policies_and_conditions && '' !== $policies_and_conditions )
-			? $policies_and_conditions
-			: __( 'Returns accepted within 30 days with original receipt. Items must be unused and in original packaging.', 'woocommerce-pos' );
-		$store['footer_imprint']          = ( null !== $footer_imprint && '' !== $footer_imprint )
-			? $footer_imprint
-			: __( 'Thank you for your purchase!', 'woocommerce-pos' );
-
-		return $store;
 	}
 
 
@@ -971,10 +910,10 @@ class Preview_Receipt_Builder {
 	 * @return string ISO 4217 currency code (e.g. "USD", "EUR").
 	 */
 	private function resolve_currency(): string {
-		$fallback = get_option( 'woocommerce_currency', 'USD' );
-		$store_currency = (string) $this->store_resolver->get_store_value( 'get_currency', '' );
-
-		return '' !== $store_currency ? $store_currency : $fallback;
+		return $this->store_resolver->resolve_store_option_string(
+			'get_currency',
+			get_option( 'woocommerce_currency', 'USD' )
+		);
 	}
 
 

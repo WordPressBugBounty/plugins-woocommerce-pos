@@ -15,7 +15,8 @@
 
 namespace WCPOS\WooCommercePOS\Services;
 
-use Ramsey\Uuid\Uuid;
+use WCPOS\WooCommercePOS\Services\Settings;
+use WCPOS\WooCommercePOS\Sync\Pos_Uuid;
 use WP_User;
 use const WCPOS\WooCommercePOS\VERSION as PLUGIN_VERSION;
 
@@ -51,6 +52,28 @@ class Analytics {
 	 * @var string
 	 */
 	const CAPTURE_PATH = '/capture/';
+
+	/**
+	 * De-dup window for impressions on AMBIENT upsell placements.
+	 *
+	 * An ambient placement renders as a side effect of unrelated work — the
+	 * product editor, the plugins list — so a merchant re-arms a daily window
+	 * simply by doing their job. Live data made the cost obvious: with a daily
+	 * window `product_edit_price` alone logged 40,362 impressions from 414
+	 * users (~97 each), and `upgrade_cta_viewed` grew to 90% of every event the
+	 * project holds. That does not measure interest, it measures how often
+	 * someone edits products, and it makes view -> click conversion meaningless
+	 * (0.015% on that placement).
+	 *
+	 * A month still answers "was this CTA on screen for this merchant", which
+	 * is the only question the upgrade funnel asks of an impression.
+	 *
+	 * Navigational placements — a settings tab, the landing page — keep the
+	 * shorter default: the merchant chose to go there, so the visit is signal.
+	 *
+	 * @var int
+	 */
+	const AMBIENT_IMPRESSION_TTL = MONTH_IN_SECONDS;
 
 	/**
 	 * HTTP request timeout in seconds.
@@ -106,7 +129,7 @@ class Analytics {
 			return $this->enabled_cache;
 		}
 
-		$consent             = woocommerce_pos_get_settings( 'general', 'tracking_consent' );
+		$consent             = Settings::instance()->tracking_consent();
 		$this->enabled_cache = ( 'allowed' === $consent );
 
 		return $this->enabled_cache;
@@ -129,13 +152,24 @@ class Analytics {
 	 * current user's UUID as `distinct_id`, groups the event under the
 	 * site UUID, and merges in a small set of default context properties.
 	 *
-	 * @param string $event      Event name, e.g. `pro_link_clicked`.
-	 * @param array  $properties Event properties. Caller-supplied values
-	 *                           take precedence over defaults.
+	 * @param string $event               Event name, e.g. `pro_link_clicked`.
+	 * @param array  $properties          Event properties. Caller-supplied values
+	 *                                    take precedence over defaults.
+	 * @param string $distinct_id_override Identity to attribute the event to.
+	 *                                    Defaults to the current user's UUID.
+	 *                                    Used by group identification and by
+	 *                                    scheduled events, which run without a
+	 *                                    logged-in user.
+	 * @param string $timestamp           ISO-8601 event time. Defaults to now.
+	 *                                    Set it when reporting something that
+	 *                                    happened earlier — an install event
+	 *                                    held back until consent was granted
+	 *                                    must keep its real install date or the
+	 *                                    retention cohorts are wrong.
 	 *
 	 * @return bool True when a request was dispatched, false otherwise.
 	 */
-	public function capture( string $event, array $properties = array() ): bool {
+	public function capture( string $event, array $properties = array(), string $distinct_id_override = '', string $timestamp = '' ): bool {
 		if ( ! $this->is_enabled() ) {
 			return false;
 		}
@@ -144,7 +178,7 @@ class Analytics {
 			return false;
 		}
 
-		$distinct_id = $this->get_distinct_id();
+		$distinct_id = '' !== $distinct_id_override ? $distinct_id_override : $this->get_distinct_id();
 		if ( '' === $distinct_id ) {
 			return false;
 		}
@@ -168,7 +202,7 @@ class Analytics {
 			'event'       => $event,
 			'distinct_id' => $distinct_id,
 			'properties'  => $merged_properties,
-			'timestamp'   => gmdate( 'c' ),
+			'timestamp'   => '' !== $timestamp ? $timestamp : gmdate( 'c' ),
 		);
 
 		return $this->send( self::CAPTURE_PATH, $payload );
@@ -265,13 +299,23 @@ class Analytics {
 			return false;
 		}
 
+		// A group identification describes the site, not a person. When no user
+		// is logged in — the scheduled property refresh runs from cron — fall
+		// back to PostHog's own convention of keying the event by the group
+		// itself, so the refresh is not silently dropped for want of an identity.
+		$distinct_id = $this->get_distinct_id();
+		if ( '' === $distinct_id ) {
+			$distinct_id = $group_type . '_' . $group_key;
+		}
+
 		return $this->capture(
 			'$groupidentify',
 			array(
 				'$group_type' => $group_type,
 				'$group_key'  => $group_key,
 				'$group_set'  => $properties,
-			)
+			),
+			$distinct_id
 		);
 	}
 
@@ -316,11 +360,10 @@ class Analytics {
 	/**
 	 * Get the distinct ID for the current user.
 	 *
-	 * Returns the user's POS UUID meta, lazily provisioning it if
-	 * missing. This matches the existing pattern in
-	 * `Templates\Frontend` for users who load the POS frontend, and
-	 * ensures analytics events from the WP admin (where `Frontend` is
-	 * never loaded) still have a stable `distinct_id`.
+	 * Delegates to Pos_Uuid — the sole authority for `_woocommerce_pos_uuid` — so
+	 * analytics events carry the SAME identity the /cashier and /customers
+	 * endpoints serve, lazily provisioning it for admin-only installs (where the
+	 * POS frontend has never loaded).
 	 *
 	 * Empty string when no user is logged in.
 	 */
@@ -330,15 +373,7 @@ class Analytics {
 			return '';
 		}
 
-		$uuid = get_user_meta( $user->ID, '_woocommerce_pos_uuid', true );
-		if ( \is_string( $uuid ) && '' !== $uuid ) {
-			return $uuid;
-		}
-
-		$uuid = Uuid::uuid4()->toString();
-		update_user_meta( $user->ID, '_woocommerce_pos_uuid', $uuid );
-
-		return $uuid;
+		return Pos_Uuid::ensure_user_uuid( $user );
 	}
 
 	/**
@@ -349,15 +384,19 @@ class Analytics {
 	 * still have a stable site identifier for grouping.
 	 */
 	public function get_site_id(): string {
-		$uuid = get_option( 'woocommerce_pos_uuid', '' );
-		if ( \is_string( $uuid ) && '' !== $uuid ) {
-			return $uuid;
+		// The deactivation hook runs even when Activator::init() bailed on the
+		// WooCommerce check — in that request `new Init()` never ran, so
+		// wcpos-functions.php is not loaded and the helper does not exist.
+		// Read the option directly rather than fataling; an install that has
+		// ever run properly already has one, and a site that has not is not
+		// worth provisioning an identity for on its way out.
+		if ( ! \function_exists( 'wcpos_get_site_uuid' ) ) {
+			$uuid = get_option( 'woocommerce_pos_uuid', '' );
+
+			return \is_string( $uuid ) ? $uuid : '';
 		}
 
-		$uuid = Uuid::uuid4()->toString();
-		update_option( 'woocommerce_pos_uuid', $uuid );
-
-		return $uuid;
+		return wcpos_get_site_uuid();
 	}
 
 	/**

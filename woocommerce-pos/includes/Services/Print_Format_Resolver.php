@@ -24,42 +24,47 @@ class Print_Format_Resolver {
 	 * @return array{kind:string, content_type:string}
 	 */
 	public function resolve( array $printer, array $template ): array {
-		$provider = (string) ( $printer['provider'] ?? '' );
-		$engine   = (string) ( $template['engine'] ?? '' );
-
-		if ( 'printnode' === $provider ) {
-			if ( 'thermal' !== $engine ) {
-				return array(
-					'kind' => 'pdf',
-					'content_type' => 'application/pdf',
-				);
-			}
-
-			$format = (string) ( $printer['printnode_format'] ?? 'pdf' );
-			if ( 'raw' === $format ) {
-				return array(
-					'kind' => 'escpos',
-					'content_type' => 'application/octet-stream',
-				);
-			}
-
-			return array(
-				'kind' => 'pdf',
-				'content_type' => 'application/pdf',
-			);
-		}
-
-		$wire = Provider::wire_format( $provider, $engine );
-		if ( null === $wire ) {
+		// Printer rows saved before the provider field existed have none; they
+		// must behave as the default provider, not fall through every branch.
+		$provider = Provider::normalize( \is_string( $printer['provider'] ?? null ) ? $printer['provider'] : null );
+		$adapter  = Provider::adapter( $provider );
+		if ( null === $adapter ) {
 			return array(
 				'kind' => '',
 				'content_type' => '',
 			);
 		}
 
-		return array(
-			'kind' => $wire,
-			'content_type' => Provider::content_type( $provider ),
-		);
+		return $adapter->format( $printer, $template );
+	}
+
+	/**
+	 * Resolve the HTTP content type for a printer when no template is in hand.
+	 *
+	 * Two callers have a printer but no template to resolve against. The
+	 * diagnostic builder always does — its payload is hand-built, not rendered
+	 * from a template — and always gets the provider's declared type. The
+	 * reprint path reaches it only when the source job's template can no longer
+	 * be rendered on the printer, and even then only when the job carries no
+	 * `pn_kind`; a job that has one keeps its stored content type instead, so
+	 * the two halves cannot drift apart.
+	 *
+	 * PrintNode therefore reports its PDF default here even for a printer in raw
+	 * mode, unlike resolve(), which sees the engine and can honour
+	 * `printnode_format`. Neither caller can act on the difference: the
+	 * diagnostic builder throws for PrintNode before it gets here, and the
+	 * reprint path's `pn_kind` condition above keeps a raw job away from this
+	 * answer. Prefer resolve() wherever a template is in hand — it answers both
+	 * halves of the pairing at once.
+	 *
+	 * @param array $printer Printer configuration.
+	 *
+	 * @return string
+	 */
+	public function content_type_for_printer( array $printer ): string {
+		$provider = Provider::normalize( \is_string( $printer['provider'] ?? null ) ? $printer['provider'] : null );
+		$adapter  = Provider::adapter( $provider );
+
+		return null === $adapter ? 'application/octet-stream' : $adapter->content_type();
 	}
 }

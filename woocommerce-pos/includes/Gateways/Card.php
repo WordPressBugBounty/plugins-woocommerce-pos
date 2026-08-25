@@ -6,18 +6,19 @@
  *
  * @see        https://wcpos.com
  *
- * @extends     WC_Payment_Gateway
  * @package WCPOS\WooCommercePOS
  */
 
 namespace WCPOS\WooCommercePOS\Gateways;
 
-use WC_Payment_Gateway;
+use WC_Order;
+use WCPOS\WooCommercePOS\Payments\Abstract_POS_Gateway;
+use WP_REST_Request;
 
 /**
  * Card class.
  */
-class Card extends WC_Payment_Gateway {
+class Card extends Abstract_POS_Gateway {
 	/**
 	 * Constructor for the gateway.
 	 */
@@ -40,11 +41,7 @@ class Card extends WC_Payment_Gateway {
 			)
 		);
 		add_action( 'woocommerce_thankyou_pos_card', array( $this, 'calculate_cashback' ) );
-		add_filter( 'wcpos_payment_gateway_provider', array( $this, 'wcpos_provider' ), 10, 3 );
-		add_filter( 'wcpos_payment_gateway_pos_type', array( $this, 'wcpos_pos_type' ), 10, 3 );
-		add_filter( 'wcpos_payment_gateway_provider_data', array( $this, 'wcpos_provider_data' ), 10, 3 );
-		add_filter( 'wcpos_payment_gateway_bootstrap', array( $this, 'wcpos_bootstrap' ), 10, 4 );
-		add_filter( 'wcpos_process_checkout_action_' . $this->id, array( $this, 'wcpos_process_checkout_action' ), 10, 5 );
+		$this->register_pos_gateway_contract_hooks();
 	}
 
 	/**
@@ -140,101 +137,42 @@ class Card extends WC_Payment_Gateway {
 	public function calculate_cashback( $order_id ): void {
 		$message  = '';
 		$order    = wc_get_order( $order_id );
+		if ( ! $order ) {
+			return;
+		}
+
 		$cashback = $order->get_meta( '_pos_card_cashback' );
 
 		// construct message.
 		if ( $cashback ) {
 			$message = /* translators: POS payment gateway label shown during checkout. */ __( 'Cashback', 'woocommerce-pos' ) . ': ';
-			$message .= wc_price( $cashback );
+			$message .= wc_price( $cashback, array( 'currency' => $order->get_currency() ) );
 		}
 
 		echo wp_kses_post( $message );
 	}
 
 	/**
-	 * POS provider family.
+	 * Provider family identifier.
 	 *
-	 * @param string $provider Provider value.
-	 * @param mixed  $gateway  Gateway object.
-	 * @param mixed  $request  REST request.
+	 * @param WP_REST_Request|null $request Request object.
 	 */
-	public function wcpos_provider( $provider, $gateway, $request = null ) {
-		if ( $gateway instanceof WC_Payment_Gateway && $this->id === $gateway->id ) {
-			return 'wcpos';
-		}
-
-		return $provider;
+	public function get_pos_provider( ?WP_REST_Request $request = null ): string {
+		return 'wcpos';
 	}
 
 	/**
-	 * POS type.
+	 * Process a POS checkout action for card.
 	 *
-	 * @param string $pos_type POS type.
-	 * @param mixed  $gateway  Gateway object.
-	 * @param mixed  $request  REST request.
-	 */
-	public function wcpos_pos_type( $pos_type, $gateway, $request = null ) {
-		if ( $gateway instanceof WC_Payment_Gateway && $this->id === $gateway->id ) {
-			return 'manual';
-		}
-
-		return $pos_type;
-	}
-
-	/**
-	 * Non-secret provider data.
+	 * @param array                $state        Checkout state.
+	 * @param string               $action       Checkout action.
+	 * @param array                $payment_data Payment data.
+	 * @param WC_Order             $order        Order object.
+	 * @param WP_REST_Request|null $request      Request object.
 	 *
-	 * @param array $provider_data Provider data.
-	 * @param mixed $gateway       Gateway object.
-	 * @param mixed $request       REST request.
+	 * @return array|\WP_Error
 	 */
-	public function wcpos_provider_data( $provider_data, $gateway, $request = null ) {
-		if ( $gateway instanceof WC_Payment_Gateway && $this->id === $gateway->id ) {
-			return array();
-		}
-
-		return $provider_data;
-	}
-
-	/**
-	 * Bootstrap response for POS card.
-	 *
-	 * @param array  $response   Bootstrap response.
-	 * @param string $gateway_id Gateway ID.
-	 * @param array  $context    Bootstrap context.
-	 * @param mixed  $request    REST request.
-	 */
-	public function wcpos_bootstrap( $response, $gateway_id, $context = array(), $request = null ) {
-		if ( $this->id === $gateway_id ) {
-			return array(
-				'gateway_id'    => $gateway_id,
-				'status'        => 'ready',
-				'expires_at'    => null,
-				'provider_data' => array(),
-			);
-		}
-
-		return $response;
-	}
-
-	/**
-	 * Handle POS checkout contract for card.
-	 *
-	 * @param array|\WP_Error $state        Checkout state.
-	 * @param string          $action       Checkout action.
-	 * @param array           $payment_data Payment data.
-	 * @param \WC_Order       $order       Order object.
-	 * @param mixed           $request      REST request.
-	 */
-	public function wcpos_process_checkout_action( $state, $action, $payment_data, $order, $request = null ) {
-		if ( is_wp_error( $state ) ) {
-			return $state;
-		}
-
-		if ( ( $state['gateway_id'] ?? '' ) !== $this->id ) {
-			return $state;
-		}
-
+	public function process_pos_checkout_action( array $state, string $action, array $payment_data, WC_Order $order, ?WP_REST_Request $request = null ) {
 		if ( 'cancel' === $action ) {
 			$state['status'] = 'cancelled';
 			return $state;

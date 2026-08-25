@@ -2,18 +2,33 @@
 /**
  * Cloud-print provider capabilities value object.
  *
- * Single source of truth for per-provider knowledge: validity, polling,
- * content types, poll endpoints, server diagnostics and thermal wire formats.
+ * Single source of truth for per-provider knowledge: validity, the default for
+ * rows without a provider, polling, content types, poll endpoints, server
+ * diagnostics, thermal wire formats and renderable template engines.
  *
  * @package WCPOS\WooCommercePOS\Services
  */
 
 namespace WCPOS\WooCommercePOS\Services;
 
+use WCPOS\WooCommercePOS\Interfaces\Provider_Adapter_Interface;
+use WCPOS\WooCommercePOS\Services\Providers\Epson_Sdp_Adapter;
+use WCPOS\WooCommercePOS\Services\Providers\Printnode_Adapter;
+use WCPOS\WooCommercePOS\Services\Providers\Star_Cloudprnt_Adapter;
+use WCPOS\WooCommercePOS\Services\Providers\Star_Online_Adapter;
+
 /**
  * Provider class.
  */
 class Provider {
+	/**
+	 * Provider assumed for printer rows that predate the provider field.
+	 *
+	 * Star CloudPRNT was the only provider before the field existed, so a row
+	 * without one is a Star CloudPRNT printer.
+	 */
+	public const DEFAULT_PROVIDER = 'star-cloudprnt';
+
 	/**
 	 * Per-provider capability map.
 	 *
@@ -29,6 +44,12 @@ class Provider {
 			'poll_endpoint'              => 'cloudprnt',
 			'supports_server_diagnostic' => true,
 			'thermal_wire_format'        => 'starprnt',
+			'template_engines'           => 'thermal',
+			'stores_job_kind'            => false,
+			// The StarPRNT emitter emits a native drawer pulse (and inserts one
+			// before the trailing cut when a job asks for it), so drawer metadata
+			// has to survive to render time.
+			'supports_drawer'            => true,
 		),
 		'epson-sdp'      => array(
 			'polling'                    => true,
@@ -36,6 +57,9 @@ class Provider {
 			'poll_endpoint'              => 'epson-sdp',
 			'supports_server_diagnostic' => true,
 			'thermal_wire_format'        => 'epos-xml',
+			'template_engines'           => 'thermal',
+			'stores_job_kind'            => false,
+			'supports_drawer'            => true,
 		),
 		'printnode'      => array(
 			'polling'                    => false,
@@ -43,6 +67,9 @@ class Provider {
 			'poll_endpoint'              => null,
 			'supports_server_diagnostic' => false,
 			'thermal_wire_format'        => null,
+			'template_engines'           => 'all',
+			'stores_job_kind'            => true,
+			'supports_drawer'            => true,
 		),
 		'star-online'    => array(
 			'polling'                    => false,
@@ -50,6 +77,9 @@ class Provider {
 			'poll_endpoint'              => null,
 			'supports_server_diagnostic' => false,
 			'thermal_wire_format'        => 'star-markup',
+			'template_engines'           => 'thermal',
+			'stores_job_kind'            => false,
+			'supports_drawer'            => false,
 		),
 	);
 
@@ -60,6 +90,49 @@ class Provider {
 	 */
 	public static function valid(): array {
 		return array_keys( self::CAPABILITIES );
+	}
+
+	/**
+	 * Resolve a stored printer row's provider to a known provider key.
+	 *
+	 * Callers read `$printer['provider']` from an option that predates the
+	 * field, so the value can be missing, empty, or (for hand-edited options)
+	 * a key this build does not know. All three resolve to the default rather
+	 * than to a silent no-provider state.
+	 *
+	 * @param string|null $provider Raw provider value from a printer row.
+	 *
+	 * @return string A key from self::valid().
+	 */
+	public static function normalize( ?string $provider ): string {
+		return \in_array( $provider, self::valid(), true ) ? (string) $provider : self::DEFAULT_PROVIDER;
+	}
+
+	/**
+	 * Resolve a provider adapter.
+	 *
+	 * An empty legacy-row value uses normalize()'s Star CloudPRNT default;
+	 * non-empty unknown keys remain unknown and return null.
+	 *
+	 * @param string $provider Provider key or empty legacy-row value.
+	 *
+	 * @return Provider_Adapter_Interface|null
+	 */
+	public static function adapter( string $provider ): ?Provider_Adapter_Interface {
+		$provider = '' === $provider ? self::normalize( $provider ) : $provider;
+
+		switch ( $provider ) {
+			case 'star-cloudprnt':
+				return new Star_Cloudprnt_Adapter();
+			case 'epson-sdp':
+				return new Epson_Sdp_Adapter();
+			case 'printnode':
+				return new Printnode_Adapter();
+			case 'star-online':
+				return new Star_Online_Adapter();
+			default:
+				return null;
+		}
 	}
 
 	/**
@@ -135,5 +208,65 @@ class Provider {
 		}
 
 		return self::CAPABILITIES[ $provider ]['thermal_wire_format'] ?? null;
+	}
+
+	/**
+	 * Receipt-template engines the provider can render for automatic jobs.
+	 *
+	 * 'all' means every active template; 'thermal' means thermal templates
+	 * only. Unknown providers are treated as thermal-only, the conservative
+	 * answer for a printer we cannot render a PDF for.
+	 *
+	 * @param string $provider Provider key.
+	 *
+	 * @return string 'all' or 'thermal'.
+	 */
+	public static function template_engines( string $provider ): string {
+		return (string) ( self::CAPABILITIES[ $provider ]['template_engines'] ?? 'thermal' );
+	}
+
+	/**
+	 * Whether jobs for the provider persist their resolved kind separately.
+	 *
+	 * @param string $provider Provider key.
+	 *
+	 * @return bool
+	 */
+	public static function stores_job_kind( string $provider ): bool {
+		return (bool) ( self::CAPABILITIES[ $provider ]['stores_job_kind'] ?? false );
+	}
+
+	/**
+	 * Whether the provider supports the generic drawer metadata contract.
+	 *
+	 * @param string $provider Provider key.
+	 *
+	 * @return bool
+	 */
+	public static function supports_drawer( string $provider ): bool {
+		return (bool) ( self::CAPABILITIES[ $provider ]['supports_drawer'] ?? false );
+	}
+
+	/**
+	 * Per-provider facts the settings screen cannot derive, keyed by provider.
+	 *
+	 * Projected onto the cloud-print settings response (cf.
+	 * Cloud_Print_Relay_Service::public_state()) so the admin app can read the
+	 * provider table from the server instead of re-declaring it. Deliberately
+	 * narrow: presentation (labels, badges) stays in the client, and facts the
+	 * client already renders from its own table are not duplicated here until
+	 * something reads them.
+	 *
+	 * @return array<string, array<string, string>>
+	 */
+	public static function public_capabilities(): array {
+		$capabilities = array();
+		foreach ( self::valid() as $provider ) {
+			$capabilities[ $provider ] = array(
+				'template_engines' => self::template_engines( $provider ),
+			);
+		}
+
+		return $capabilities;
 	}
 }
