@@ -3,7 +3,7 @@ Contributors: kilbot
 Tags: ecommerce, point-of-sale, pos, inventory, woocommerce
 Requires at least: 5.6
 Tested up to: 7.1
-Stable tag: 1.10.0
+Stable tag: 1.10.1
 License: GPL-3.0
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 
@@ -121,20 +121,34 @@ WCPOS keeps your data in your own WooCommerce database, unless you turn on a fea
 
 == Changelog ==
 
+= 1.10.1 - 2026/08/26 =
+
+**A fix for product variations.** In 1.10.0 the POS asked WooCommerce for variations the wrong way, and got back data shaped like a product instead of a variation. If you sell variable products, this release matters.
+
+- **Variation names are readable again.** On a product with three or more attributes -- say Colour, Size and Fabric -- every variation row showed the same text, so there was no way to tell them apart at the till. They now read as their own attributes, like "Blue, Large, Cotton".
+- **Variation images are back.** Variation thumbnails were blank in the product list, and a variation added to the cart carried its parent's picture onto the order and the printed receipt. Orders already saved with the wrong picture are left alone -- reaching into completed orders to correct a thumbnail is riskier than the wrong thumbnail.
+- **Disabled variations are no longer for sale in the POS.** If you untick "Enabled" on a variation in WooCommerce, it now disappears from the POS the same way it disappears from your storefront. Previously it stayed on sale at the till.
+- **Variations you have hidden from the POS no longer count.** The variation list showed "Showing 2 of 3" for a product with a hidden variation, with no way to reach the third. Hidden and disabled variations are now left out of the list, the count, and the totals on Store Health.
+- **Hiding or showing a product now reaches the tills.** Changing POS visibility did not always tell the app anything had changed, so a hidden product could linger on a device. It is announced properly now, and un-hiding brings the product back.
+- **"Records need attention" clears when it should.** The repair checks looked at products the POS is never allowed to see, so a store with hidden products could show a warning that never went away no matter how many times it synced.
+
+**Please update.** If you sell variable products, 1.10.0 is showing your cashiers the wrong information. After updating, the POS re-syncs your variations once on its own -- no action needed.
+
+**Note for developers:** `wcpos/v2` variations are now served by WooCommerce's own `WC_REST_Product_Variations_Controller`, so a variation document is the wc/v3 variation shape -- a singular `image`, `wc_get_formatted_variation()` for `name`, and none of the product-only fields 1.10.0 included. `GET wcpos/v2/variations` also accepts a plain collection request and returns `X-WP-Total`.
+
 = 1.10.0 - 2026/08/25 =
-**A new sync engine.** The biggest update since we rebuilt WCPOS in React Native back in 2023. Your store now syncs through a change log -- the POS asks what changed since it last checked, instead of re-downloading your catalogue every time. Nearly everything below follows from that.
-- **Faster to open, and it stays fast.** Categories, tags, brands and coupons load on demand instead of before you can sell. Products and customers fill in quietly in the background. Once your catalogue is local, product search doesn't touch the server at all.
-- **Your server does less work.** When nothing has changed, the POS gets a tiny "nothing new" reply instead of a full page of data -- and when your server is busy, the POS notices and eases off.
-- **No more invisible walls.** Product lists stopped at 1,000 items and order lists at 200, with no message -- rows simply stopped arriving. Both now scroll as far as you like.
-- **Sorting and filtering that cover your whole store.** Sort by SKU, stock, price or date and get a real answer, not just the part already on the device. Filter orders by cashier, store, customer or date.
-- **Search that finds what WooCommerce finds.** Product search now matches inside words, so compound words work (searching "saippua" finds "Kuorintasaippua"). Customer search matches full names.
-- **Built to survive a dropped connection.** Browsing, cart building and saving orders keep working offline, and the new sync engine now queues the changes you make and replays them when you reconnect -- receipt emails, and customer, coupon and stock edits on Pro. Anything the server rejects is listed with the reason so you can fix and resend it, instead of disappearing silently. Taking payment is the one step that still needs a connection -- offline checkout, starting with cash, is the focus of 1.11.
+
+**A new sync engine.** The biggest update since we rebuilt WCPOS in React Native back in 2023. Your store now syncs through a change log -- the POS asks what changed since it last checked, instead of re-downloading your catalogue every time. It is the foundation the offline queue and Store Health below are built on.
+
 - **Prevent overselling (new, optional).** Turn it on in Checkout settings: the POS stops you adding more than you have, and the server refuses the order too, so a stale device can't oversell either. Backorders are respected.
+- **Built to survive a dropped connection.** Browsing, cart building and saving orders keep working offline, and the new sync engine queues the changes you make and replays them when you reconnect -- receipt emails, and customer, coupon and stock edits on Pro. Anything the server rejects is listed with the reason so you can fix and resend it, instead of disappearing silently. Taking payment is the one step that still needs a connection -- offline checkout, starting with cash, is the focus of 1.11.
 - **Barcode scanning, rebuilt.** Scan with the device camera on any platform. Support for USB, serial, Bluetooth and Bluetooth LE scanners alongside keyboard-wedge. A setup wizard and a test panel that measures your scanner and tells you what to fix. Optional scan sounds.
 - **Store Health.** New screens showing what's on the device versus the server, real storage usage, sync performance over time, and a searchable log where every warning links to an explanation.
-- **Money that matches WooCommerce exactly.** Totals keep full precision, compound taxes follow WooCommerce's own ordering and rounding, and cash change and cashback show in the order's currency.
+- **Search that finds what WooCommerce finds.** Product search now matches inside words, so compound words work (searching "saippua" finds "Kuorintasaippua"). Customer search matches full names.
 - **Printing.** Star cloud printers negotiate their format properly, receipts can be rendered server-side as an image for printers that need it, and auto-print rules can fire on order creation or only once paid. Offline receipts print in the right language.
-- Also: Settings redesigned; cashiers can create and edit products by default; dropdowns fixed on iPad; language switching fixed throughout; deleted items now disappear from the POS.
+- **Settings redesigned.** A calmer, row-based layout with shorter labels. Settings and Store Health now open as panels rather than modals.
+- **Cashiers can create and edit products by default.** Deleting stays opt-in, and catalogue edits are checked against real WordPress permissions -- a rejected edit is reverted with the server's reason shown.
+- **Fixed dropdowns not opening on iPad**, and language changes not reaching every part of the app.
 
 **Note for developers:** 1.10.0 introduces the `wcpos/v2` REST namespace. The POS now uses it for syncing and for the shared POS services that were previously served from `wcpos/v1`. The `wcpos/v1` routes still register but are frozen, and some legacy `API\Settings` controller methods have been removed. See the full release notes for the complete list of breaking changes.
 
@@ -266,6 +280,9 @@ Almost three months of work — here are the highlights:
 - Plus lots of smaller fixes — tax and coupon calculations, third-party plugin compatibility, faster syncs, and better translations.
 
 == Upgrade Notice ==
+
+= 1.10.1 =
+Fixes variations: readable names on products with three or more attributes, variation images on orders and receipts, and disabled variations no longer for sale at the till. Recommended for anyone selling variable products.
 
 = 1.10.0 =
 This is a major update. Please don't update while your store is busy -- pick a time when you have some free time to check everything over, and be ready to roll back if you run into a problem. Don't update lightly.
