@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInitc05fecb62ea97b40cdf7bb450842e935
+class ComposerStaticInit678abdb557a0e01dc92e5121cf29b55b
 {
     public static $files = array (
         '23c18046f52bef3eea034657bafda50f' => __DIR__ . '/..' . '/symfony/polyfill-php81/bootstrap.php',
@@ -323,6 +323,7 @@ class ComposerStaticInitc05fecb62ea97b40cdf7bb450842e935
         'ValueError' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/ValueError.php',
         'WCPOS\\WooCommercePOS\\AJAX' => __DIR__ . '/../..' . '/includes/AJAX.php',
         'WCPOS\\WooCommercePOS\\API' => __DIR__ . '/../..' . '/includes/API.php',
+        'WCPOS\\WooCommercePOS\\API\\Product_Search' => __DIR__ . '/../..' . '/includes/API/Product_Search.php',
         'WCPOS\\WooCommercePOS\\API\\Route_Classifier' => __DIR__ . '/../..' . '/includes/API/Route_Classifier.php',
         'WCPOS\\WooCommercePOS\\API\\V1\\Auth' => __DIR__ . '/../..' . '/includes/API/V1/Auth.php',
         'WCPOS\\WooCommercePOS\\API\\V1\\Bulk_ID_Fast_Path' => __DIR__ . '/../..' . '/includes/API/V1/Bulk_ID_Fast_Path.php',
@@ -450,6 +451,7 @@ class ComposerStaticInitc05fecb62ea97b40cdf7bb450842e935
         'WCPOS\\WooCommercePOS\\Services\\Auth' => __DIR__ . '/../..' . '/includes/Services/Auth.php',
         'WCPOS\\WooCommercePOS\\Services\\Barcode_Field' => __DIR__ . '/../..' . '/includes/Services/Barcode_Field.php',
         'WCPOS\\WooCommercePOS\\Services\\Cashier' => __DIR__ . '/../..' . '/includes/Services/Cashier.php',
+        'WCPOS\\WooCommercePOS\\Services\\Client_Signal' => __DIR__ . '/../..' . '/includes/Services/Client_Signal.php',
         'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Diagnostic' => __DIR__ . '/../..' . '/includes/Services/Cloud_Print_Diagnostic.php',
         'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Media_Types' => __DIR__ . '/../..' . '/includes/Services/Cloud_Print_Media_Types.php',
         'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Poll_Request' => __DIR__ . '/../..' . '/includes/Services/Cloud_Print_Poll_Request.php',
@@ -594,10 +596,10 @@ class ComposerStaticInitc05fecb62ea97b40cdf7bb450842e935
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInitc05fecb62ea97b40cdf7bb450842e935::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInitc05fecb62ea97b40cdf7bb450842e935::$prefixDirsPsr4;
-            $loader->prefixesPsr0 = ComposerStaticInitc05fecb62ea97b40cdf7bb450842e935::$prefixesPsr0;
-            $loader->classMap = ComposerStaticInitc05fecb62ea97b40cdf7bb450842e935::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit678abdb557a0e01dc92e5121cf29b55b::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit678abdb557a0e01dc92e5121cf29b55b::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInit678abdb557a0e01dc92e5121cf29b55b::$prefixesPsr0;
+            $loader->classMap = ComposerStaticInit678abdb557a0e01dc92e5121cf29b55b::$classMap;
 
         }, null, ClassLoader::class);
     }

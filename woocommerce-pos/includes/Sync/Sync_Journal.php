@@ -12,7 +12,7 @@ namespace WCPOS\WooCommercePOS\Sync;
 // phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Database failures are passed to exceptions, not rendered.
 
 use Automattic\WooCommerce\Utilities\OrderUtil;
-use WP_REST_Request;
+use WCPOS\WooCommercePOS\Logger;
 
 final class Sync_Journal {
 	/** Persisted order backfill cursor. */
@@ -45,6 +45,13 @@ final class Sync_Journal {
 		return $wpdb->prefix . Health::SYNC_JOURNAL_TABLE;
 	}
 
+	/**
+	 * The `revision` column is a per-lane union: a `date_modified` stamp for
+	 * catalogue/customer rows, `''` for live order rows (order revisions are
+	 * computed at pull time — ADR 0033), `'deleted'` for order tombstones, and
+	 * legacy pre-#1746 order rows may still carry stored `sha256:` hashes,
+	 * which the pull planner's stored-wins branch serves until they age out.
+	 */
 	public function schema_sql( string $table_name, string $charset_collate = '' ): string {
 		return "CREATE TABLE {$table_name} (\n"
 			. "  sequence BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n"
@@ -241,6 +248,75 @@ final class Sync_Journal {
 		add_action( 'woocommerce_before_trash_order', array( $this, 'record_order_deleted' ), 10, 1 );
 		add_action( 'woocommerce_before_delete_order', array( $this, 'record_order_deleted' ), 10, 1 );
 		add_action( 'woocommerce_untrash_order', array( $this, 'record_cot_order_untrashed' ), 10, 1 );
+		add_action( 'woocommerce_pos_invalidate', array( $this, 'record_invalidation' ), 10, 2 );
+	}
+
+	/**
+	 * Record an out-of-band change announced by an extension.
+	 *
+	 * Plugins fire `woocommerce_pos_invalidate` when they change a record's
+	 * SERVED representation in a way no save hook announces — a filter-only
+	 * output change (a pricing filter, an added payload field). The journal
+	 * appends a pointer row; clients hydrate pointer rows by sequence, so the
+	 * re-served payload carries the plugin's change. Formula fingerprints
+	 * (#1742) will eventually make representation changes directly detectable;
+	 * until then this action is the documented relief valve.
+	 *
+	 * `$object_type` is the registry's SINGULAR journal name: `product`,
+	 * `variation`, `customer`, `order`, `tax_rate`, and the other journalled
+	 * catalogue types. A plural (`products`) or unknown type is logged and
+	 * ignored. Rows land with origin `invalidate` on every type.
+	 *
+	 * @since 1.10.3
+	 *
+	 * @param string $object_type Canonical (singular) journal object type.
+	 * @param int    $object_id   Changed object ID.
+	 */
+	public function record_invalidation( $object_type = '', $object_id = 0 ): void {
+		// Loose signature on purpose: a public action handler whose posture is
+		// log-and-ignore — a one-arg or wrong-typed do_action() must not fatal
+		// the calling plugin's request.
+		$object_type = is_scalar( $object_type ) ? (string) $object_type : '';
+		$object_id   = is_scalar( $object_id ) ? (int) $object_id : 0;
+		$collection  = Collections::by_object_type( $object_type );
+		if ( $object_id <= 0 || null === $collection || ! isset( $collection['journal'] ) ) {
+			Logger::log( sprintf( 'WCPOS sync: ignored invalidation for object_type "%s" (id %d)', $object_type, $object_id ) );
+			return;
+		}
+
+		if ( 'order' === $object_type ) {
+			$this->record_order_change( $object_id, 'invalidate', false );
+			return;
+		}
+		$loader = (string) ( $collection['identity']['loader'] ?? '' );
+		if ( 'product' === $loader ) {
+			$object = function_exists( 'wc_get_product' ) ? wc_get_product( $object_id ) : null;
+			$this->record( $object_type, $object_id, false, self::object_revision( $object ), 'invalidate' );
+			if ( 'variation' === $object_type ) {
+				// Native variation paths always pair the parent row — the parent
+				// document carries the variable price range — so an invalidation
+				// must too, or the relief valve half-works. Recorded inline (not via
+				// record_variation_parent) so the paired row keeps the 'invalidate'
+				// origin the contract above promises for every row this action lands.
+				$parent_id = function_exists( 'wp_get_post_parent_id' ) ? (int) wp_get_post_parent_id( $object_id ) : 0;
+				if ( $parent_id > 0 ) {
+					$parent = function_exists( 'wc_get_product' ) ? wc_get_product( $parent_id ) : null;
+					$this->record( 'product', $parent_id, false, self::object_revision( $parent ), 'invalidate' );
+				}
+			}
+			return;
+		}
+		if ( 'customer' === $loader ) {
+			try {
+				$customer = class_exists( '\\WC_Customer' ) ? new \WC_Customer( $object_id ) : null;
+			} catch ( \Exception $e ) {
+				Logger::log( sprintf( 'WCPOS sync: ignored invalidation for missing customer %d', $object_id ) );
+				return;
+			}
+			$this->record( 'customer', $object_id, false, self::object_revision( $customer ), 'invalidate', true, 'invalidate' );
+			return;
+		}
+		$this->record( $object_type, $object_id, false, '', 'invalidate' );
 	}
 
 	public function record_product_created( int $product_id ): void {
@@ -436,11 +512,9 @@ final class Sync_Journal {
 	 *
 	 * `woocommerce_untrash_order` fires BEFORE the data store restores the
 	 * status, so the row cannot be written there. The restore then performs
-	 * MORE THAN ONE object save, so arming on the first
-	 * `woocommerce_after_order_object_save` whose status is not `trash`
-	 * captures a revision from part-way through the restore — anything a later
-	 * save changes is missing from it, and the journal advertises a revision
-	 * the order does not have.
+	 * MORE THAN ONE object save, so the journal row's modified_gmt must be read
+	 * from the SETTLED order for checkpoint ordering. The revision is computed
+	 * at pull time rather than stored here.
 	 *
 	 * Measured sequence for an HPOS untrash (status read from wc_orders):
 	 *
@@ -471,14 +545,11 @@ final class Sync_Journal {
 		$order         = wc_get_order( $order_id );
 		$modified_date = $order ? $order->get_date_modified() : null;
 		$modified      = $modified_date ? gmdate( 'Y-m-d H:i:s', $modified_date->getTimestamp() ) : gmdate( 'Y-m-d H:i:s' );
-		$revision      = 'deleted';
-
-		if ( $order && ! $deleted ) {
-			$serializer = new Order_Serializer();
-			$payload    = $serializer->serialize_order( $order_id, new WP_REST_Request() );
-			$sync_meta  = $serializer->sync_metadata( $payload, $order_id, 'custom-pull', false, 0 );
-			$revision   = (string) $sync_meta['revision'];
-		}
+		// Order revisions are computed at pull time from the served payload (ADR 0033,
+		// #1746) — an order journal row is a change pointer, not a content stamp.
+		// 'deleted' is kept for wire compatibility (it flows into served checkpoints)
+		// and diagnostics; the planner branches on the `deleted` flag, not this value.
+		$revision = $deleted ? 'deleted' : '';
 
 		$now = gmdate( 'Y-m-d H:i:s' );
 		return false !== $wpdb->insert(
