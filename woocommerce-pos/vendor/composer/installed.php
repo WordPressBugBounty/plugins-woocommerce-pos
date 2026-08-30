@@ -1,9 +1,9 @@
 <?php return array(
     'root' => array(
         'name' => 'wcpos/woocommerce-pos',
-        'pretty_version' => 'v1.10.4',
-        'version' => '1.10.4.0',
-        'reference' => 'a7165f45674a1b6399f482caf04683e2299cf37a',
+        'pretty_version' => 'v1.10.5',
+        'version' => '1.10.5.0',
+        'reference' => '8c4cba885c985c9423c6bd3fac3d2ce83a67172a',
         'type' => 'wordpress-plugin',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -89,9 +89,9 @@
             'dev_requirement' => false,
         ),
         'wcpos/woocommerce-pos' => array(
-            'pretty_version' => 'v1.10.4',
-            'version' => '1.10.4.0',
-            'reference' => 'a7165f45674a1b6399f482caf04683e2299cf37a',
+            'pretty_version' => 'v1.10.5',
+            'version' => '1.10.5.0',
+            'reference' => '8c4cba885c985c9423c6bd3fac3d2ce83a67172a',
             'type' => 'wordpress-plugin',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
