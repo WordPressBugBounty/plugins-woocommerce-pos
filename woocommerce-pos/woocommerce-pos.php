@@ -3,7 +3,7 @@
  * Plugin Name:       WCPOS – Point of Sale for WooCommerce
  * Plugin URI:        https://wordpress.org/plugins/woocommerce-pos/
  * Description:       A simple front-end for taking WooCommerce orders at the Point of Sale. Requires <a href="http://wordpress.org/plugins/woocommerce/">WooCommerce</a>.
- * Version:           1.10.5
+ * Version:           1.10.6
  * Author:            kilbot
  * Author URI:        http://wcpos.com
  * Text Domain:       woocommerce-pos
@@ -25,13 +25,25 @@ namespace WCPOS\WooCommercePOS;
 
 // Define plugin constants (use define() with checks to avoid conflicts when Pro plugin is active).
 if ( ! \defined( __NAMESPACE__ . '\VERSION' ) ) {
-	\define( __NAMESPACE__ . '\VERSION', '1.10.5' );
+	\define( __NAMESPACE__ . '\VERSION', '1.10.6' );
 }
-require_once __DIR__ . '/includes/API/V2/Ping.php';
+
+/*
+ * Serve the lightweight ping before the rest of the stack loads.
+ *
+ * The class_exists() guard is load-bearing. Pro bundles this same class and may
+ * already have declared it from its own copy; require_once dedupes on resolved
+ * path, so requiring ours unconditionally re-declares it and fatals. That happens
+ * during the plugin include phase, which makes the Pro-is-active bail-out below
+ * too late to help and takes down every route on the site.
+ */
+if ( ! class_exists( API\V2\Ping::class, false ) ) {
+	require_once __DIR__ . '/includes/API/V2/Ping.php';
+}
 API\V2\Ping::maybe_serve();
 
 if ( ! \defined( __NAMESPACE__ . '\TRANSLATION_VERSION' ) ) {
-	\define( __NAMESPACE__ . '\TRANSLATION_VERSION', '2026.8.14' );
+	\define( __NAMESPACE__ . '\TRANSLATION_VERSION', '2026.9.3' );
 }
 if ( ! \defined( __NAMESPACE__ . '\PLUGIN_NAME' ) ) {
 	\define( __NAMESPACE__ . '\PLUGIN_NAME', 'woocommerce-pos' );

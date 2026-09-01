@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInitb077071c87ecc88dbc7c5483494c633d
+class ComposerStaticInit8a2983aefbb432b96d5ff1f198452f58
 {
     public static $files = array (
         '23c18046f52bef3eea034657bafda50f' => __DIR__ . '/..' . '/symfony/polyfill-php81/bootstrap.php',
@@ -462,6 +462,7 @@ class ComposerStaticInitb077071c87ecc88dbc7c5483494c633d
         'WCPOS\\WooCommercePOS\\Services\\Core_Order_Audit_Guard' => __DIR__ . '/../..' . '/includes/Services/Core_Order_Audit_Guard.php',
         'WCPOS\\WooCommercePOS\\Services\\Customer_Meta_Parity' => __DIR__ . '/../..' . '/includes/Services/Customer_Meta_Parity.php',
         'WCPOS\\WooCommercePOS\\Services\\Decimal_Quantities' => __DIR__ . '/../..' . '/includes/Services/Decimal_Quantities.php',
+        'WCPOS\\WooCommercePOS\\Services\\Error_Reporter' => __DIR__ . '/../..' . '/includes/Services/Error_Reporter.php',
         'WCPOS\\WooCommercePOS\\Services\\Extensions' => __DIR__ . '/../..' . '/includes/Services/Extensions.php',
         'WCPOS\\WooCommercePOS\\Services\\Feature_Flags' => __DIR__ . '/../..' . '/includes/Services/Feature_Flags.php',
         'WCPOS\\WooCommercePOS\\Services\\Fiscal_Receipt_Service' => __DIR__ . '/../..' . '/includes/Services/Fiscal_Receipt_Service.php',
@@ -584,6 +585,7 @@ class ComposerStaticInitb077071c87ecc88dbc7c5483494c633d
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Star_Markup_Thermal_Emitter' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Star_Markup_Thermal_Emitter.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Starprnt_Thermal_Emitter' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Starprnt_Thermal_Emitter.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Text_Thermal_Emitter' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Text_Thermal_Emitter.php',
+        'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Bitmap' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Thermal_Bitmap.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Bounds' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Thermal_Bounds.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Markup_Parser' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Thermal_Markup_Parser.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Renderer' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Thermal_Renderer.php',
@@ -596,10 +598,10 @@ class ComposerStaticInitb077071c87ecc88dbc7c5483494c633d
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInitb077071c87ecc88dbc7c5483494c633d::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInitb077071c87ecc88dbc7c5483494c633d::$prefixDirsPsr4;
-            $loader->prefixesPsr0 = ComposerStaticInitb077071c87ecc88dbc7c5483494c633d::$prefixesPsr0;
-            $loader->classMap = ComposerStaticInitb077071c87ecc88dbc7c5483494c633d::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit8a2983aefbb432b96d5ff1f198452f58::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit8a2983aefbb432b96d5ff1f198452f58::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInit8a2983aefbb432b96d5ff1f198452f58::$prefixesPsr0;
+            $loader->classMap = ComposerStaticInit8a2983aefbb432b96d5ff1f198452f58::$classMap;
 
         }, null, ClassLoader::class);
     }
