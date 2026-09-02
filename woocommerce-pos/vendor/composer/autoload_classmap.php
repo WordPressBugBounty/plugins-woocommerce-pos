@@ -456,6 +456,7 @@ return array(
     'WCPOS\\WooCommercePOS\\Sync\\Meta_Normalizer' => $baseDir . '/includes/Sync/Meta_Normalizer.php',
     'WCPOS\\WooCommercePOS\\Sync\\Mutation_Store' => $baseDir . '/includes/Sync/Mutation_Store.php',
     'WCPOS\\WooCommercePOS\\Sync\\Order_Document' => $baseDir . '/includes/Sync/Order_Document.php',
+    'WCPOS\\WooCommercePOS\\Sync\\Order_Modified_Date' => $baseDir . '/includes/Sync/Order_Modified_Date.php',
     'WCPOS\\WooCommercePOS\\Sync\\Order_Pull_Planner' => $baseDir . '/includes/Sync/Order_Pull_Planner.php',
     'WCPOS\\WooCommercePOS\\Sync\\Order_Query' => $baseDir . '/includes/Sync/Order_Query.php',
     'WCPOS\\WooCommercePOS\\Sync\\Order_Serializer' => $baseDir . '/includes/Sync/Order_Serializer.php',
