@@ -29,17 +29,22 @@ final class Product_Search {
 		$q                 = $wp_query->query_vars;
 		$n                 = ! empty( $q['exact'] ) ? '' : '%';
 		$meta_fields       = Barcode_Field::search_keys();
+		$meta_placeholders = implode( ', ', array_fill( 0, \count( $meta_fields ), '%s' ) );
 		$search_conditions = array();
 		foreach ( (array) $q['search_terms'] as $term ) {
 			$term                = $n . $wpdb->esc_like( $term ) . $n;
-			$search_conditions[] = $wpdb->prepare( "({$wpdb->posts}.post_title LIKE %s)", $term ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name is safe.
-			foreach ( $meta_fields as $field ) {
-				$search_conditions[] = $wpdb->prepare( '(pm1.meta_value LIKE %s AND pm1.meta_key = %s)', $term, $field );
-			}
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names come from $wpdb; $meta_placeholders is a generated list of %s placeholders, and the keys themselves are passed to prepare() as arguments.
+			$search_conditions[] = $wpdb->prepare(
+				"( {$wpdb->posts}.post_title LIKE %s OR EXISTS (
+					SELECT 1 FROM {$wpdb->postmeta} AS wcpos_search_meta WHERE wcpos_search_meta.post_id = {$wpdb->posts}.ID AND wcpos_search_meta.meta_key IN ($meta_placeholders) AND wcpos_search_meta.meta_value LIKE %s
+				) )",
+				array_merge( array( $term ), $meta_fields, array( $term ) )
+			);
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		}
 
 		if ( ! empty( $search_conditions ) ) {
-			$search = ' AND (' . implode( ' OR ', $search_conditions ) . ') ';
+			$search = ' AND (' . implode( ' AND ', $search_conditions ) . ') ';
 			if ( ! is_user_logged_in() ) {
 				$search .= " AND ($wpdb->posts.post_password = '') ";
 			}
@@ -75,6 +80,24 @@ final class Product_Search {
 			$groupby = "{$wpdb->posts}.ID";
 		}
 		return $groupby;
+	}
+
+	/**
+	 * Rank exact SKU or barcode matches ahead of substring matches.
+	 *
+	 * @param string   $orderby ORDER BY SQL.
+	 * @param WP_Query $query   Query instance.
+	 */
+	public static function posts_orderby( string $orderby, WP_Query $query ): string {
+		global $wpdb;
+		if ( ! self::is_searching( $query ) ) {
+			return $orderby;
+		}
+		$keys = Barcode_Field::search_keys();
+		return $wpdb->prepare(
+			'MIN(CASE WHEN pm1.meta_key IN (' . implode( ', ', array_fill( 0, count( $keys ), '%s' ) ) . ') AND pm1.meta_value = %s THEN 0 ELSE 1 END) ASC',
+			array_merge( $keys, array( trim( (string) $query->query_vars['s'] ) ) )
+		) . ', ' . ( '' === trim( $orderby ) ? "{$wpdb->posts}.ID DESC" : $orderby );
 	}
 
 	/**
