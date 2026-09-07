@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInit0528548268bef86abb77d1fb298da3a1
+class ComposerStaticInita4a58da290117d4feb97eab16cd64adc
 {
     public static $files = array (
         '23c18046f52bef3eea034657bafda50f' => __DIR__ . '/..' . '/symfony/polyfill-php81/bootstrap.php',
@@ -428,6 +428,7 @@ class ComposerStaticInit0528548268bef86abb77d1fb298da3a1
         'WCPOS\\WooCommercePOS\\Init' => __DIR__ . '/../..' . '/includes/Init.php',
         'WCPOS\\WooCommercePOS\\Integrations\\WPSEO' => __DIR__ . '/../..' . '/includes/Integrations/WPSEO.php',
         'WCPOS\\WooCommercePOS\\Integrations\\WePOS' => __DIR__ . '/../..' . '/includes/Integrations/WePOS.php',
+        'WCPOS\\WooCommercePOS\\Integrations\\WooCommerce_Tax' => __DIR__ . '/../..' . '/includes/Integrations/WooCommerce_Tax.php',
         'WCPOS\\WooCommercePOS\\Interfaces\\Collection_Writer_Interface' => __DIR__ . '/../..' . '/includes/Interfaces/Collection_Writer_Interface.php',
         'WCPOS\\WooCommercePOS\\Interfaces\\Provider_Adapter_Interface' => __DIR__ . '/../..' . '/includes/Interfaces/Provider_Adapter_Interface.php',
         'WCPOS\\WooCommercePOS\\Interfaces\\Push_Provider_Adapter_Interface' => __DIR__ . '/../..' . '/includes/Interfaces/Push_Provider_Adapter_Interface.php',
@@ -601,10 +602,10 @@ class ComposerStaticInit0528548268bef86abb77d1fb298da3a1
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInit0528548268bef86abb77d1fb298da3a1::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInit0528548268bef86abb77d1fb298da3a1::$prefixDirsPsr4;
-            $loader->prefixesPsr0 = ComposerStaticInit0528548268bef86abb77d1fb298da3a1::$prefixesPsr0;
-            $loader->classMap = ComposerStaticInit0528548268bef86abb77d1fb298da3a1::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInita4a58da290117d4feb97eab16cd64adc::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInita4a58da290117d4feb97eab16cd64adc::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInita4a58da290117d4feb97eab16cd64adc::$prefixesPsr0;
+            $loader->classMap = ComposerStaticInita4a58da290117d4feb97eab16cd64adc::$classMap;
 
         }, null, ClassLoader::class);
     }

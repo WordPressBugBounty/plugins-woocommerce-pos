@@ -348,6 +348,7 @@ return array(
     'WCPOS\\WooCommercePOS\\Init' => $baseDir . '/includes/Init.php',
     'WCPOS\\WooCommercePOS\\Integrations\\WPSEO' => $baseDir . '/includes/Integrations/WPSEO.php',
     'WCPOS\\WooCommercePOS\\Integrations\\WePOS' => $baseDir . '/includes/Integrations/WePOS.php',
+    'WCPOS\\WooCommercePOS\\Integrations\\WooCommerce_Tax' => $baseDir . '/includes/Integrations/WooCommerce_Tax.php',
     'WCPOS\\WooCommercePOS\\Interfaces\\Collection_Writer_Interface' => $baseDir . '/includes/Interfaces/Collection_Writer_Interface.php',
     'WCPOS\\WooCommercePOS\\Interfaces\\Provider_Adapter_Interface' => $baseDir . '/includes/Interfaces/Provider_Adapter_Interface.php',
     'WCPOS\\WooCommercePOS\\Interfaces\\Push_Provider_Adapter_Interface' => $baseDir . '/includes/Interfaces/Push_Provider_Adapter_Interface.php',
