@@ -202,6 +202,7 @@ class WooCommerce_Tax {
 			if ( ! WC()->customer instanceof \WC_Customer ) {
 				wc_load_cart();
 			}
+			add_filter( 'woocommerce_services_override_tax_rate', array( $this, 'preserve_tax_rate_order' ), PHP_INT_MAX, 3 );
 			if ( false === $taxjar->calculate_tax( $options ) ) {
 				\WCPOS\WooCommercePOS\Logger::log( 'WooCommerce Tax returned no rates for the POS order', array( 'order_id' => $order->get_id() ) );
 			}
@@ -213,7 +214,75 @@ class WooCommerce_Tax {
 					'error'    => $e->getMessage(),
 				)
 			);
+		} finally {
+			remove_filter( 'woocommerce_services_override_tax_rate', array( $this, 'preserve_tax_rate_order' ), PHP_INT_MAX );
 		}
+	}
+
+	/**
+	 * Preserve WooCommerce rate IDs when TaxJar jurisdiction fields change order.
+	 *
+	 * WooCommerce Tax assigns rows by response position, not jurisdiction. Only
+	 * reorder an exact label bijection; new/renamed jurisdictions keep upstream
+	 * behaviour. Values are untouched, including genuine rate changes. This hook
+	 * exposes the mutable response object before the plugin writes its rate rows.
+	 *
+	 * @param mixed  $rate Overall rate, returned unchanged.
+	 * @param object $tax  TaxJar tax response.
+	 * @param array  $body Normalized TaxJar request address.
+	 * @return mixed
+	 */
+	public function preserve_tax_rate_order( $rate, $tax, $body ) {
+		$lines = \is_array( $tax->breakdown->line_items ?? null ) ? $tax->breakdown->line_items : array();
+		if ( isset( $tax->breakdown->shipping ) ) {
+			$lines[] = $tax->breakdown->shipping;
+		}
+		foreach ( $lines as $line ) {
+			if ( ! \is_object( $line ) ) {
+				continue;
+			}
+			$keys = array();
+			foreach ( $line as $key => $value ) {
+				if ( 'combined_tax_rate' === $key || false === strpos( $key, '_tax_rate' ) ) {
+					continue;
+				}
+				// Mirrors the plugin's private generate_itemized_tax_rate_name().
+				$label = ucwords( str_replace( '_', ' ', str_replace( '_tax_rate', '', $key ) ) ) . ' ' . __( 'Tax', 'woocommerce-services' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Match the third-party rate labels.
+				$place = trim( trim( $tax->jurisdictions->county ?? '' ) . ' ' . trim( $tax->jurisdictions->city ?? '' ) );
+				$label = 'US' === $body['to_country'] ? ( '' === $place ? $label : $place . ' : ' . $label ) : strtoupper( $label );
+				if ( isset( $keys[ $label ] ) ) {
+					continue 2;
+				}
+				$keys[ $label ] = $key;
+			}
+			$product = wc_get_product( (int) ( $line->id ?? 0 ) );
+			$rates   = \WC_Tax::find_rates(
+				array(
+					'country'   => $body['to_country'],
+					'state'     => $body['to_state'],
+					'postcode'  => $body['to_zip'],
+					'city'      => $body['to_city'],
+					'tax_class' => $product ? $product->get_tax_class() : '',
+				)
+			);
+			if ( \count( $rates ) !== \count( $keys ) ) {
+				continue;
+			}
+			$ordered = array();
+			foreach ( $rates as $existing ) {
+				if ( ! isset( $keys[ $existing['label'] ] ) ) {
+					continue 2;
+				}
+				$key             = $keys[ $existing['label'] ];
+				$ordered[ $key ] = $line->$key;
+				unset( $keys[ $existing['label'] ] );
+			}
+			foreach ( $ordered as $key => $value ) {
+				unset( $line->$key );
+				$line->$key = $value;
+			}
+		}
+		return $rate;
 	}
 
 	/**
@@ -279,8 +348,10 @@ class WooCommerce_Tax {
 	 *
 	 * The declared basis (the POS meta, else WooCommerce's setting) is tried first
 	 * so two addresses that share a country, state, postcode and city are told
-	 * apart; the tuple check keeps the street consistent with the location that
-	 * was actually resolved, which a filter may have changed.
+	 * apart — including the store's own address, which a local customer's billing
+	 * or shipping address can match exactly; the tuple check keeps the street
+	 * consistent with the location that was actually resolved, which a filter may
+	 * have changed.
 	 *
 	 * @param WC_Abstract_Order $order    The order.
 	 * @param array             $location Country, state, postcode and city from get_taxable_location().
@@ -293,9 +364,15 @@ class WooCommerce_Tax {
 			if ( '' === $basis ) {
 				$basis = (string) get_option( 'woocommerce_tax_based_on', 'shipping' );
 			}
+			// The store address is a candidate too, but LAST unless it is the
+			// declared basis: when a filter moves the taxed location to the other
+			// customer address, that address must win over a store that happens
+			// to share its country, state, postcode and city.
+			$countries  = WC()->countries;
 			$candidates = array(
 				'billing'  => array( $order->get_billing_address_1(), array( $order->get_billing_country(), $order->get_billing_state(), $order->get_billing_postcode(), $order->get_billing_city() ) ),
 				'shipping' => array( $order->get_shipping_address_1(), array( $order->get_shipping_country(), $order->get_shipping_state(), $order->get_shipping_postcode(), $order->get_shipping_city() ) ),
+				'base'     => array( $countries->get_base_address(), array( $countries->get_base_country(), $countries->get_base_state(), $countries->get_base_postcode(), $countries->get_base_city() ) ),
 			);
 			if ( isset( $candidates[ $basis ] ) ) {
 				$candidates = array( $basis => $candidates[ $basis ] ) + $candidates;
