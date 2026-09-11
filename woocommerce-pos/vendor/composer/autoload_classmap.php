@@ -381,6 +381,7 @@ return array(
     'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Relay_Service' => $baseDir . '/includes/Services/Cloud_Print_Relay_Service.php',
     'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Submit_Service' => $baseDir . '/includes/Services/Cloud_Print_Submit_Service.php',
     'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Trigger_Service' => $baseDir . '/includes/Services/Cloud_Print_Trigger_Service.php',
+    'WCPOS\\WooCommercePOS\\Services\\Cloudflare_Detector' => $baseDir . '/includes/Services/Cloudflare_Detector.php',
     'WCPOS\\WooCommercePOS\\Services\\Core_Order_Audit_Guard' => $baseDir . '/includes/Services/Core_Order_Audit_Guard.php',
     'WCPOS\\WooCommercePOS\\Services\\Customer_Account_Guard' => $baseDir . '/includes/Services/Customer_Account_Guard.php',
     'WCPOS\\WooCommercePOS\\Services\\Customer_Meta_Parity' => $baseDir . '/includes/Services/Customer_Meta_Parity.php',
