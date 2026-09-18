@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInit87bfa60bf69b1308ce60bca9d7f5ee4c
+class ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116
 {
     public static $files = array (
         '23c18046f52bef3eea034657bafda50f' => __DIR__ . '/..' . '/symfony/polyfill-php81/bootstrap.php',
@@ -425,11 +425,13 @@ class ComposerStaticInit87bfa60bf69b1308ce60bca9d7f5ee4c
         'WCPOS\\WooCommercePOS\\Gateways' => __DIR__ . '/../..' . '/includes/Gateways.php',
         'WCPOS\\WooCommercePOS\\Gateways\\Card' => __DIR__ . '/../..' . '/includes/Gateways/Card.php',
         'WCPOS\\WooCommercePOS\\Gateways\\Cash' => __DIR__ . '/../..' . '/includes/Gateways/Cash.php',
+        'WCPOS\\WooCommercePOS\\Hook_Manifest' => __DIR__ . '/../..' . '/includes/Hook_Manifest.php',
         'WCPOS\\WooCommercePOS\\Init' => __DIR__ . '/../..' . '/includes/Init.php',
         'WCPOS\\WooCommercePOS\\Integrations\\WPSEO' => __DIR__ . '/../..' . '/includes/Integrations/WPSEO.php',
         'WCPOS\\WooCommercePOS\\Integrations\\WePOS' => __DIR__ . '/../..' . '/includes/Integrations/WePOS.php',
         'WCPOS\\WooCommercePOS\\Integrations\\WooCommerce_Tax' => __DIR__ . '/../..' . '/includes/Integrations/WooCommerce_Tax.php',
         'WCPOS\\WooCommercePOS\\Interfaces\\Collection_Writer_Interface' => __DIR__ . '/../..' . '/includes/Interfaces/Collection_Writer_Interface.php',
+        'WCPOS\\WooCommercePOS\\Interfaces\\Poll_Provider_Adapter_Interface' => __DIR__ . '/../..' . '/includes/Interfaces/Poll_Provider_Adapter_Interface.php',
         'WCPOS\\WooCommercePOS\\Interfaces\\Provider_Adapter_Interface' => __DIR__ . '/../..' . '/includes/Interfaces/Provider_Adapter_Interface.php',
         'WCPOS\\WooCommercePOS\\Interfaces\\Push_Provider_Adapter_Interface' => __DIR__ . '/../..' . '/includes/Interfaces/Push_Provider_Adapter_Interface.php',
         'WCPOS\\WooCommercePOS\\Interfaces\\Receipt_Output_Adapter_Interface' => __DIR__ . '/../..' . '/includes/Interfaces/Receipt_Output_Adapter_Interface.php',
@@ -454,7 +456,6 @@ class ComposerStaticInit87bfa60bf69b1308ce60bca9d7f5ee4c
         'WCPOS\\WooCommercePOS\\Services\\Barcode_Field' => __DIR__ . '/../..' . '/includes/Services/Barcode_Field.php',
         'WCPOS\\WooCommercePOS\\Services\\Cashier' => __DIR__ . '/../..' . '/includes/Services/Cashier.php',
         'WCPOS\\WooCommercePOS\\Services\\Client_Signal' => __DIR__ . '/../..' . '/includes/Services/Client_Signal.php',
-        'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Diagnostic' => __DIR__ . '/../..' . '/includes/Services/Cloud_Print_Diagnostic.php',
         'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Media_Types' => __DIR__ . '/../..' . '/includes/Services/Cloud_Print_Media_Types.php',
         'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Poll_Request' => __DIR__ . '/../..' . '/includes/Services/Cloud_Print_Poll_Request.php',
         'WCPOS\\WooCommercePOS\\Services\\Cloud_Print_Registry' => __DIR__ . '/../..' . '/includes/Services/Cloud_Print_Registry.php',
@@ -476,12 +477,14 @@ class ComposerStaticInit87bfa60bf69b1308ce60bca9d7f5ee4c
         'WCPOS\\WooCommercePOS\\Services\\Meta_Data_Repair' => __DIR__ . '/../..' . '/includes/Services/Meta_Data_Repair.php',
         'WCPOS\\WooCommercePOS\\Services\\Opening_Hours_Formatter' => __DIR__ . '/../..' . '/includes/Services/Opening_Hours_Formatter.php',
         'WCPOS\\WooCommercePOS\\Services\\Order_Notes' => __DIR__ . '/../..' . '/includes/Services/Order_Notes.php',
+        'WCPOS\\WooCommercePOS\\Services\\Order_Write_Intent' => __DIR__ . '/../..' . '/includes/Services/Order_Write_Intent.php',
         'WCPOS\\WooCommercePOS\\Services\\Pdf_Layout_Preprocessor' => __DIR__ . '/../..' . '/includes/Services/Pdf_Layout_Preprocessor.php',
         'WCPOS\\WooCommercePOS\\Services\\Pdf_Renderer' => __DIR__ . '/../..' . '/includes/Services/Pdf_Renderer.php',
+        'WCPOS\\WooCommercePOS\\Services\\Permission_Rules' => __DIR__ . '/../..' . '/includes/Services/Permission_Rules.php',
         'WCPOS\\WooCommercePOS\\Services\\Pos_Order_Audit' => __DIR__ . '/../..' . '/includes/Services/Pos_Order_Audit.php',
         'WCPOS\\WooCommercePOS\\Services\\Preview_Receipt_Builder' => __DIR__ . '/../..' . '/includes/Services/Preview_Receipt_Builder.php',
         'WCPOS\\WooCommercePOS\\Services\\PrintNode_Client' => __DIR__ . '/../..' . '/includes/Services/PrintNode_Client.php',
-        'WCPOS\\WooCommercePOS\\Services\\Print_Format_Resolver' => __DIR__ . '/../..' . '/includes/Services/Print_Format_Resolver.php',
+        'WCPOS\\WooCommercePOS\\Services\\Print_Job_Lifecycle' => __DIR__ . '/../..' . '/includes/Services/Print_Job_Lifecycle.php',
         'WCPOS\\WooCommercePOS\\Services\\Print_Job_Service' => __DIR__ . '/../..' . '/includes/Services/Print_Job_Service.php',
         'WCPOS\\WooCommercePOS\\Services\\Provider' => __DIR__ . '/../..' . '/includes/Services/Provider.php',
         'WCPOS\\WooCommercePOS\\Services\\Providers\\Epson_Sdp_Adapter' => __DIR__ . '/../..' . '/includes/Services/Providers/Epson_Sdp_Adapter.php',
@@ -496,10 +499,12 @@ class ComposerStaticInit87bfa60bf69b1308ce60bca9d7f5ee4c
         'WCPOS\\WooCommercePOS\\Services\\Receipt_Payload_Assembler' => __DIR__ . '/../..' . '/includes/Services/Receipt_Payload_Assembler.php',
         'WCPOS\\WooCommercePOS\\Services\\Receipt_Preview_Fixture_Loader' => __DIR__ . '/../..' . '/includes/Services/Receipt_Preview_Fixture_Loader.php',
         'WCPOS\\WooCommercePOS\\Services\\Receipt_Renderer_Factory' => __DIR__ . '/../..' . '/includes/Services/Receipt_Renderer_Factory.php',
+        'WCPOS\\WooCommercePOS\\Services\\Receipt_Sections' => __DIR__ . '/../..' . '/includes/Services/Receipt_Sections.php',
         'WCPOS\\WooCommercePOS\\Services\\Receipt_Snapshot_Store' => __DIR__ . '/../..' . '/includes/Services/Receipt_Snapshot_Store.php',
         'WCPOS\\WooCommercePOS\\Services\\Receipt_Store_Resolver' => __DIR__ . '/../..' . '/includes/Services/Receipt_Store_Resolver.php',
         'WCPOS\\WooCommercePOS\\Services\\Request_Lane' => __DIR__ . '/../..' . '/includes/Services/Request_Lane.php',
         'WCPOS\\WooCommercePOS\\Services\\Session_Context' => __DIR__ . '/../..' . '/includes/Services/Session_Context.php',
+        'WCPOS\\WooCommercePOS\\Services\\Session_Registry' => __DIR__ . '/../..' . '/includes/Services/Session_Registry.php',
         'WCPOS\\WooCommercePOS\\Services\\Settings' => __DIR__ . '/../..' . '/includes/Services/Settings.php',
         'WCPOS\\WooCommercePOS\\Services\\Settings\\Abstract_Section' => __DIR__ . '/../..' . '/includes/Services/Settings/Abstract_Section.php',
         'WCPOS\\WooCommercePOS\\Services\\Settings\\Access_Section' => __DIR__ . '/../..' . '/includes/Services/Settings/Access_Section.php',
@@ -544,15 +549,18 @@ class ComposerStaticInit87bfa60bf69b1308ce60bca9d7f5ee4c
         'WCPOS\\WooCommercePOS\\Sync\\Order_Modified_Date' => __DIR__ . '/../..' . '/includes/Sync/Order_Modified_Date.php',
         'WCPOS\\WooCommercePOS\\Sync\\Order_Pull_Planner' => __DIR__ . '/../..' . '/includes/Sync/Order_Pull_Planner.php',
         'WCPOS\\WooCommercePOS\\Sync\\Order_Query' => __DIR__ . '/../..' . '/includes/Sync/Order_Query.php',
+        'WCPOS\\WooCommercePOS\\Sync\\Order_Search' => __DIR__ . '/../..' . '/includes/Sync/Order_Search.php',
         'WCPOS\\WooCommercePOS\\Sync\\Order_Serializer' => __DIR__ . '/../..' . '/includes/Sync/Order_Serializer.php',
         'WCPOS\\WooCommercePOS\\Sync\\Order_Uuid_Exception' => __DIR__ . '/../..' . '/includes/Sync/Order_Uuid_Exception.php',
         'WCPOS\\WooCommercePOS\\Sync\\Order_Write_Payload' => __DIR__ . '/../..' . '/includes/Sync/Order_Write_Payload.php',
         'WCPOS\\WooCommercePOS\\Sync\\Pos_Uuid' => __DIR__ . '/../..' . '/includes/Sync/Pos_Uuid.php',
         'WCPOS\\WooCommercePOS\\Sync\\Pos_Visibility' => __DIR__ . '/../..' . '/includes/Sync/Pos_Visibility.php',
         'WCPOS\\WooCommercePOS\\Sync\\Product_Images' => __DIR__ . '/../..' . '/includes/Sync/Product_Images.php',
+        'WCPOS\\WooCommercePOS\\Sync\\Product_Search' => __DIR__ . '/../..' . '/includes/Sync/Product_Search.php',
         'WCPOS\\WooCommercePOS\\Sync\\Product_Serializer' => __DIR__ . '/../..' . '/includes/Sync/Product_Serializer.php',
         'WCPOS\\WooCommercePOS\\Sync\\Proxy_Uuid_Stamper' => __DIR__ . '/../..' . '/includes/Sync/Proxy_Uuid_Stamper.php',
         'WCPOS\\WooCommercePOS\\Sync\\Request_Int_Param' => __DIR__ . '/../..' . '/includes/Sync/Request_Int_Param.php',
+        'WCPOS\\WooCommercePOS\\Sync\\Request_Write_Queue' => __DIR__ . '/../..' . '/includes/Sync/Request_Write_Queue.php',
         'WCPOS\\WooCommercePOS\\Sync\\Response_Envelope' => __DIR__ . '/../..' . '/includes/Sync/Response_Envelope.php',
         'WCPOS\\WooCommercePOS\\Sync\\Response_Telemetry' => __DIR__ . '/../..' . '/includes/Sync/Response_Telemetry.php',
         'WCPOS\\WooCommercePOS\\Sync\\Retry_After_Mirror' => __DIR__ . '/../..' . '/includes/Sync/Retry_After_Mirror.php',
@@ -593,6 +601,7 @@ class ComposerStaticInit87bfa60bf69b1308ce60bca9d7f5ee4c
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Text_Thermal_Emitter' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Text_Thermal_Emitter.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Bitmap' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Thermal_Bitmap.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Bounds' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Thermal_Bounds.php',
+        'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Emitter_Support' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Thermal_Emitter_Support.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Markup_Parser' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Thermal_Markup_Parser.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Renderer' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Thermal_Renderer.php',
         'WCPOS\\WooCommercePOS\\Templates\\Thermal\\Thermal_Text_Layout' => __DIR__ . '/../..' . '/includes/Templates/Thermal/Thermal_Text_Layout.php',
@@ -604,10 +613,10 @@ class ComposerStaticInit87bfa60bf69b1308ce60bca9d7f5ee4c
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInit87bfa60bf69b1308ce60bca9d7f5ee4c::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInit87bfa60bf69b1308ce60bca9d7f5ee4c::$prefixDirsPsr4;
-            $loader->prefixesPsr0 = ComposerStaticInit87bfa60bf69b1308ce60bca9d7f5ee4c::$prefixesPsr0;
-            $loader->classMap = ComposerStaticInit87bfa60bf69b1308ce60bca9d7f5ee4c::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116::$prefixesPsr0;
+            $loader->classMap = ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116::$classMap;
 
         }, null, ClassLoader::class);
     }

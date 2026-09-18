@@ -10,10 +10,10 @@
 namespace WCPOS\WooCommercePOS\API\V2\Writers;
 
 use WCPOS\WooCommercePOS\Services\Order_Notes;
+use WCPOS\WooCommercePOS\Services\Order_Write_Intent;
 use WCPOS\WooCommercePOS\Services\Pos_Order_Audit;
 use WCPOS\WooCommercePOS\Services\Settings as SettingsService;
 use WCPOS\WooCommercePOS\Services\Stock_Validator;
-use WCPOS\WooCommercePOS\Services\Tax_Id_Writer;
 use WCPOS\WooCommercePOS\Sync\Meta_Entry;
 use WCPOS\WooCommercePOS\Sync\Order_Serializer;
 use WCPOS\WooCommercePOS\Sync\Order_Write_Payload;
@@ -46,7 +46,7 @@ class Order_Writer extends Null_Writer {
 
 	/** Prepare an order create and its create-only hook policy. */
 	public function prepare_create( array $meta, array $payload, callable $validate_tax_ids ) {
-		$created_gmt = $this->validate_client_created_gmt( $payload );
+		$created_gmt = $this->order_payload->validate_client_created_gmt( $payload );
 		if ( is_wp_error( $created_gmt ) ) {
 			return $created_gmt;
 		}
@@ -120,7 +120,19 @@ class Order_Writer extends Null_Writer {
 
 	/** Forward within the named order hook lifecycle. */
 	public function forward( array $prepared, callable $forward ) {
-		return $this->forward_with_reserved_stock( $prepared, $forward );
+		$declared = $prepared['context'];
+		if ( ! in_array( $declared['operation'] ?? '', array( 'create', 'update' ), true ) ) {
+			return $this->forward_with_reserved_stock( $prepared, $forward );
+		}
+		$payload = $prepared['payload'];
+		$declared['requested_status'] = isset( $payload['status'] ) ? (string) $payload['status'] : '';
+		$declared['set_paid'] = isset( $payload['set_paid'] ) && rest_sanitize_boolean( $payload['set_paid'] );
+		return Order_Write_Intent::open(
+			$declared,
+			function () use ( $prepared, $forward ) {
+				return $this->forward_with_reserved_stock( $prepared, $forward );
+			}
+		);
 	}
 
 	/**
@@ -180,7 +192,7 @@ class Order_Writer extends Null_Writer {
 	/** Persist the order behavior assigned to a controller-owned protocol phase. */
 	public function persist( string $phase, int $id, array $payload, array $current = array(), array $response_data = array(), array $context = array() ): void {
 		if ( 'create_before_identity' === $phase ) {
-			$this->persist_tax_ids( $id, $payload, true );
+			$this->order_payload->persist_tax_ids( $id, $payload, true );
 		} elseif ( 'create_after_identity' === $phase ) {
 			$this->stamp_order_audit( $id, $payload, true );
 			$order = wc_get_order( $id );
@@ -189,10 +201,10 @@ class Order_Writer extends Null_Writer {
 			}
 		} elseif ( 'create_recovery' === $phase ) {
 			$this->stamp_order_audit( $id, $payload, false );
-			$this->persist_tax_ids( $id, $payload, true );
+			$this->order_payload->persist_tax_ids( $id, $payload, true );
 		} elseif ( 'update' === $phase ) {
 			$this->stamp_order_till_meta( $id, $payload );
-			$this->persist_tax_ids( $id, $payload, false );
+			$this->order_payload->persist_tax_ids( $id, $payload, false );
 			$this->persist_cashier_store_reassignment( $id, $current, $response_data, $context );
 			if ( ! empty( $context['clear_email'] ) ) {
 				$order = wc_get_order( $id );
@@ -238,42 +250,19 @@ class Order_Writer extends Null_Writer {
 
 	/** Apply create/update hook policies around one exact forwarded order. */
 	private function forward_with_order_lifecycle( array $prepared, callable $forward ) {
-		$context         = $prepared['context'];
-		$forwarded_order = null;
-		$pre_insert      = static function ( $order, $request, $creating ) use ( $context, &$forwarded_order ) {
-			$is_create = 'create' === $context['operation'];
-			if ( $is_create && $creating && $order instanceof \WC_Order && null === $forwarded_order ) {
-				$forwarded_order = $order;
-			}
-			$target = $is_create ? ( $creating && $order === $forwarded_order ) : ( $order instanceof \WC_Order && $context['id'] === $order->get_id() );
-			if ( $target ) {
-				foreach ( $context['fill_meta'] as $key => $value ) {
-					$order->update_meta_data( $key, $value );
-				}
-			}
-			if ( $is_create && $creating && null !== $context['created_gmt'] && $order instanceof \WC_Order ) {
-				$order->set_date_created( $context['created_gmt'] );
-			}
-			return $order;
-		};
-		$created_via = static function ( $order ) use ( &$forwarded_order ) {
-			if ( $order instanceof \WC_Order && $order === $forwarded_order && 'woocommerce-pos' !== $order->get_created_via() ) {
+		$context = $prepared['context'];
+		$created_via = static function ( $order ) {
+			$intent = Order_Write_Intent::current();
+			if ( $order instanceof \WC_Order && null !== $intent && $intent->is_subject( $order ) && 'woocommerce-pos' !== $order->get_created_via() ) {
 				$order->set_created_via( 'woocommerce-pos' );
 			}
 		};
-		$use_filter = 'create' === $context['operation'] || array() !== $context['fill_meta'];
-		if ( $use_filter ) {
-			add_filter( 'woocommerce_rest_pre_insert_shop_order_object', $pre_insert, 10, 3 );
-		}
 		if ( 'create' === $context['operation'] ) {
 			add_action( 'woocommerce_before_order_object_save', $created_via );
 		}
 		try {
 			return $forward( $prepared['method'], $prepared['route'], $prepared['payload'] );
 		} finally {
-			if ( $use_filter ) {
-				remove_filter( 'woocommerce_rest_pre_insert_shop_order_object', $pre_insert, 10 );
-			}
 			if ( 'create' === $context['operation'] ) {
 				remove_action( 'woocommerce_before_order_object_save', $created_via );
 			}
@@ -404,19 +393,6 @@ class Order_Writer extends Null_Writer {
 		}
 	}
 
-	/** Persist order tax IDs or the create-time customer snapshot. */
-	private function persist_tax_ids( int $id, array $payload, bool $is_create ): void {
-		$order = wc_get_order( $id );
-		if ( ! $order ) {
-			return;
-		}
-		if ( is_array( $payload['tax_ids'] ?? null ) ) {
-			( new Tax_Id_Writer() )->write_for_order( $order, $payload['tax_ids'] );
-		} elseif ( $is_create && $order->get_customer_id() > 0 ) {
-			( new Tax_Id_Writer() )->snapshot_from_user_to_order( $order, $order->get_customer_id() );
-		}
-	}
-
 	/** Persist server-owned order audit metadata. */
 	private function stamp_order_audit( int $id, array $payload, bool $stamp_version ): void {
 		$meta = array( '_pos_user' => (string) get_current_user_id() );
@@ -455,33 +431,6 @@ class Order_Writer extends Null_Writer {
 		$meta      = is_array( $payload['meta_data'] ?? null ) ? $payload['meta_data'] : array();
 		$protected = $id > 0 ? Pos_Order_Audit::audit_meta_ids( wc_get_order( $id ) ) : array();
 		return Pos_Order_Audit::strip_audit_meta( $meta, $protected );
-	}
-
-	/** Validate and normalize the optional client create timestamp. */
-	private function validate_client_created_gmt( array $payload ) {
-		if ( ! isset( $payload['date_created_gmt'] ) ) {
-			return null;
-		}
-		if ( ! is_scalar( $payload['date_created_gmt'] ) ) {
-			return $this->invalid_created_gmt();
-		}
-		$value = wc_clean( wp_unslash( (string) $payload['date_created_gmt'] ) );
-		if ( '' === $value ) {
-			return null;
-		}
-		$timestamp = 1 === preg_match( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/i', $value )
-			? rest_parse_date( 'Z' === strtoupper( substr( $value, -1 ) ) ? $value : $value . 'Z', true ) : false;
-		if ( false === $timestamp ) {
-			return $this->invalid_created_gmt();
-		}
-		return $timestamp > time() + DAY_IN_SECONDS
-			? new WP_Error( 'woocommerce_pos_rest_future_date_created_gmt', __( 'date_created_gmt cannot be more than 24 hours in the future.', 'woocommerce-pos' ), array( 'status' => 400 ) )
-			: $timestamp;
-	}
-
-	/** Build the stable invalid create timestamp error. */
-	private function invalid_created_gmt(): WP_Error {
-		return new WP_Error( 'woocommerce_pos_rest_invalid_date_created_gmt', __( 'date_created_gmt must be a valid ISO 8601 UTC date.', 'woocommerce-pos' ), array( 'status' => 400 ) );
 	}
 
 	/** Whether order stock was actually reduced before delete. */
