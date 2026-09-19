@@ -42,6 +42,18 @@ _Avoid_: query filter, orderby mapping, proxy mirror
 One of the two paths a collection read reaches the client by — the direct lane (`wcpos/v1` controllers, plus the flat `wcpos/v2` routes with no `wc/v3` proxy backing, e.g. `/variations`) and the proxy lane (`wcpos/v2` → `wc/v3`). Behaviour that exists on one lane only is a parity bug, not a design. (Code comments also say "lane" for the request shapes *within* one route — include lane, discovery lane; that narrower sense is not this term.)
 _Avoid_: v1/v2 API, endpoint version
 
+**Write Payload shape**:
+The one pass an order document takes through the Order Write Payload module before WooCommerce sees it, named by what an absent line means. The _full-document_ shape (`for_update`, the `wcpos/v2` push lane) treats the document as the whole order: an omitted stored line is deleted and coupon lines are reconciled. The _partial-document_ shape (`for_partial_update`, the `wcpos/v1` lane) keeps WooCommerce's own semantics: an absent line is untouched and coupon lines pass through to the controller. Both shapes share every other rule; a rule that exists in one shape only is a ruling (recorded on the module), not a drift.
+_Avoid_: v1 sanitizer, v2 forward rules, payload filter
+
+**Create Identity**:
+The proof that a record born on the `wcpos/v2` push lane owns its client UUID before the mutation is finalized: poison checkpoint, UUID persisted, resolved back to the same id, checkpoint finalized. Written once in the Create Identity module; a retry against a `poison` checkpoint re-enters the same proof rather than running a second copy. ADR 0038 decides when identity is re-proved; this module decides where the proof lives.
+_Avoid_: poison retry, identity stamp, recovery path
+
+**Promoted Service**:
+A shared POS service (auth, settings, cashier, receipts, print jobs, stores, extensions, logs, gateways, checkout, templates, shipping methods, tax classes, order statuses) that answers identically under `wcpos/v1` and `wcpos/v2`. The Controller Registry derives the v2 map from the v1 map, so promotion is the default and only the nine frozen data controllers (the sync surface replaced them, #544) are excluded.
+_Avoid_: v2 twin, pass-through subclass, v2 controllers map
+
 **Replica policy**:
 What a collection's client-side copy aims to hold: `complete` (a full replica, e.g. products,
 variations) or `windowed` (a bounded recent window of an unbounded set, e.g. orders).

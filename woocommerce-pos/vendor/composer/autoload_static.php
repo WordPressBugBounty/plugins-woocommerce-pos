@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116
+class ComposerStaticInit35375aca526306e8e135122c75125285
 {
     public static $files = array (
         '23c18046f52bef3eea034657bafda50f' => __DIR__ . '/..' . '/symfony/polyfill-php81/bootstrap.php',
@@ -323,6 +323,7 @@ class ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116
         'ValueError' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/ValueError.php',
         'WCPOS\\WooCommercePOS\\AJAX' => __DIR__ . '/../..' . '/includes/AJAX.php',
         'WCPOS\\WooCommercePOS\\API' => __DIR__ . '/../..' . '/includes/API.php',
+        'WCPOS\\WooCommercePOS\\API\\Controller_Registry' => __DIR__ . '/../..' . '/includes/API/Controller_Registry.php',
         'WCPOS\\WooCommercePOS\\API\\Order_Search' => __DIR__ . '/../..' . '/includes/API/Order_Search.php',
         'WCPOS\\WooCommercePOS\\API\\Product_Search' => __DIR__ . '/../..' . '/includes/API/Product_Search.php',
         'WCPOS\\WooCommercePOS\\API\\Route_Classifier' => __DIR__ . '/../..' . '/includes/API/Route_Classifier.php',
@@ -357,23 +358,14 @@ class ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116
         'WCPOS\\WooCommercePOS\\API\\V1\\Traits\\Term_Controller' => __DIR__ . '/../..' . '/includes/API/V1/Traits/Term_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\V1\\Traits\\Uuid_Handler' => __DIR__ . '/../..' . '/includes/API/V1/Traits/Uuid_Handler.php',
         'WCPOS\\WooCommercePOS\\API\\V1\\Traits\\WCPOS_REST_API' => __DIR__ . '/../..' . '/includes/API/V1/Traits/WCPOS_REST_API.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Auth' => __DIR__ . '/../..' . '/includes/API/V2/Auth.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Cashier' => __DIR__ . '/../..' . '/includes/API/V2/Cashier.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Catalog_Proxy_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Catalog_Proxy_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Changes_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Changes_Controller.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Checkout_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Checkout_Controller.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Data_Order_Statuses_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Data_Order_Statuses_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Digests_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Digests_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Echo_Probe' => __DIR__ . '/../..' . '/includes/API/V2/Echo_Probe.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Extensions' => __DIR__ . '/../..' . '/includes/API/V2/Extensions.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Gateway_Bootstrap_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Gateway_Bootstrap_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Integrity_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Integrity_Controller.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Logs' => __DIR__ . '/../..' . '/includes/API/V2/Logs.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Order_Email_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Order_Email_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Orders_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Orders_Controller.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Payment_Gateways' => __DIR__ . '/../..' . '/includes/API/V2/Payment_Gateways.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Ping' => __DIR__ . '/../..' . '/includes/API/V2/Ping.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Print_Jobs_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Print_Jobs_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Proxy\\Coupons_Proxy_Behavior' => __DIR__ . '/../..' . '/includes/API/V2/Proxy/Coupons_Proxy_Behavior.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Proxy\\Customers_Proxy_Behavior' => __DIR__ . '/../..' . '/includes/API/V2/Proxy/Customers_Proxy_Behavior.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Proxy\\Null_Proxy_Behavior' => __DIR__ . '/../..' . '/includes/API/V2/Proxy/Null_Proxy_Behavior.php',
@@ -384,15 +376,9 @@ class ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116
         'WCPOS\\WooCommercePOS\\API\\V2\\Proxy\\Stable_Sort' => __DIR__ . '/../..' . '/includes/API/V2/Proxy/Stable_Sort.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Proxy\\Taxes_Proxy_Behavior' => __DIR__ . '/../..' . '/includes/API/V2/Proxy/Taxes_Proxy_Behavior.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Proxy\\Terms_Proxy_Behavior' => __DIR__ . '/../..' . '/includes/API/V2/Proxy/Terms_Proxy_Behavior.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Receipts_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Receipts_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Resolve_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Resolve_Controller.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Settings' => __DIR__ . '/../..' . '/includes/API/V2/Settings.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Shipping_Methods_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Shipping_Methods_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Site' => __DIR__ . '/../..' . '/includes/API/V2/Site.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Status_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Status_Controller.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Stores' => __DIR__ . '/../..' . '/includes/API/V2/Stores.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Tax_Classes_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Tax_Classes_Controller.php',
-        'WCPOS\\WooCommercePOS\\API\\V2\\Templates_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Templates_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Uuid_Backfill_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Uuid_Backfill_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Variations_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Variations_Controller.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Write_Controller' => __DIR__ . '/../..' . '/includes/API/V2/Write_Controller.php',
@@ -537,6 +523,7 @@ class ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116
         'WCPOS\\WooCommercePOS\\Sync\\Config_Fingerprint' => __DIR__ . '/../..' . '/includes/Sync/Config_Fingerprint.php',
         'WCPOS\\WooCommercePOS\\Sync\\Cors' => __DIR__ . '/../..' . '/includes/Sync/Cors.php',
         'WCPOS\\WooCommercePOS\\Sync\\Coupon_Modified_Date' => __DIR__ . '/../..' . '/includes/Sync/Coupon_Modified_Date.php',
+        'WCPOS\\WooCommercePOS\\Sync\\Create_Identity' => __DIR__ . '/../..' . '/includes/Sync/Create_Identity.php',
         'WCPOS\\WooCommercePOS\\Sync\\Digest_Index' => __DIR__ . '/../..' . '/includes/Sync/Digest_Index.php',
         'WCPOS\\WooCommercePOS\\Sync\\Endpoint_Permissions' => __DIR__ . '/../..' . '/includes/Sync/Endpoint_Permissions.php',
         'WCPOS\\WooCommercePOS\\Sync\\Header_Mirror' => __DIR__ . '/../..' . '/includes/Sync/Header_Mirror.php',
@@ -613,10 +600,10 @@ class ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116::$prefixDirsPsr4;
-            $loader->prefixesPsr0 = ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116::$prefixesPsr0;
-            $loader->classMap = ComposerStaticIniteaa653db9d0a33013a7a8a86c8c07116::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit35375aca526306e8e135122c75125285::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit35375aca526306e8e135122c75125285::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInit35375aca526306e8e135122c75125285::$prefixesPsr0;
+            $loader->classMap = ComposerStaticInit35375aca526306e8e135122c75125285::$classMap;
 
         }, null, ClassLoader::class);
     }
