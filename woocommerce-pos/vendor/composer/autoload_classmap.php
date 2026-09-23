@@ -409,6 +409,7 @@ return array(
     'WCPOS\\WooCommercePOS\\Services\\Receipt_Snapshot_Store' => $baseDir . '/includes/Services/Receipt_Snapshot_Store.php',
     'WCPOS\\WooCommercePOS\\Services\\Receipt_Store_Resolver' => $baseDir . '/includes/Services/Receipt_Store_Resolver.php',
     'WCPOS\\WooCommercePOS\\Services\\Request_Lane' => $baseDir . '/includes/Services/Request_Lane.php',
+    'WCPOS\\WooCommercePOS\\Services\\Service_Groups' => $baseDir . '/includes/Services/Service_Groups.php',
     'WCPOS\\WooCommercePOS\\Services\\Session_Context' => $baseDir . '/includes/Services/Session_Context.php',
     'WCPOS\\WooCommercePOS\\Services\\Session_Registry' => $baseDir . '/includes/Services/Session_Registry.php',
     'WCPOS\\WooCommercePOS\\Services\\Settings' => $baseDir . '/includes/Services/Settings.php',

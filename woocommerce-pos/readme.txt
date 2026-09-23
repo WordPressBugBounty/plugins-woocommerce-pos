@@ -3,7 +3,7 @@ Contributors: kilbot
 Tags: ecommerce, point-of-sale, pos, inventory, woocommerce
 Requires at least: 5.6
 Tested up to: 7.1
-Stable tag: 1.10.19
+Stable tag: 1.10.20
 License: GPL-3.0
 License URI: http://www.gnu.org/licenses/gpl-3.0.html
 
@@ -128,15 +128,22 @@ Full details are in our [privacy policy](https://wcpos.com/privacy).
 
 == Changelog ==
 
+= 1.10.20 - 2026/09/23 =
+
+- **Checkout no longer reports "Checkout failed" for a sale that reached the store.** If the till was busy sending another change, or an earlier attempt had failed, the checkout screen could give up waiting even though the order had been saved. It now hears back as soon as the order is saved, and pressing Checkout again after a failure tries straight away.
+- **Search repairs a damaged search index instead of failing at every launch.** When the saved search index could not be read, search stayed broken with "Failed to initialize search". The index is now discarded and rebuilt from the till's records.
+- **Gateways that take no payment at the till — quotes, invoices, purchase orders — now close the order with the Order Status you set for them.** The checkout used to succeed but leave the order at POS - Open. Only gateways with an Order Status saved in POS > Settings > Checkout are affected, and the order is not marked paid.
+- **Refunds that arrive from a payment gateway now respect your POS customer-email settings.** A refund recorded by a gateway's webhook could email the customer even with POS customer emails switched off; refunds made in wp-admin or at the till were not affected.
+
 = 1.10.19 - 2026/09/19 =
 
-- **A till no longer loses live records during its startup tidy-up.** With the POS open twice on the same device, the tidy-up could mistake live records — including the sign-in row — for damaged ones and remove them. It now leaves alone anything it cannot fully account for. Web merchants receive this through WooCommerce POS plugin 1.10.19, which serves the storage worker; desktop and phone apps carry it in this release.
+- **A till no longer loses live records during its startup tidy-up.** With the POS open twice on the same device, the tidy-up could mistake live records — including the sign-in row — for damaged ones and remove them. It now leaves alone anything it cannot fully account for. Web merchants receive this through WCPOS plugin 1.10.19, which serves the storage worker; desktop and phone apps carry it in this release.
 - **A sale that could not be sent because the till was signed out now waits for sign-in instead of being given up on.** The cashier is told as soon as it happens, and the sale sends itself once the session is back.
 - **A refused POS request now says why it was refused.** A 401 from the POS routes names the reason in the response and in Health > Logs, instead of only reporting that the request failed.
 
 = 1.10.18 - 2026/09/18 =
 
-- **A web till with the POS open in more than one tab repairs its local database again.** Since the 1.10 storage repairs shipped, every repair on web was refused whenever another tab of the same store could be open, so a damaged record stayed damaged and the same storage errors repeated on every sync. The tab that leads the store now owns the repair and the other tabs follow it. Web merchants receive this through WooCommerce POS plugin 1.10.18, which serves the storage worker; desktop and phone apps carry it in this release.
+- **A web till with the POS open in more than one tab repairs its local database again.** Since the 1.10 storage repairs shipped, every repair on web was refused whenever another tab of the same store could be open, so a damaged record stayed damaged and the same storage errors repeated on every sync. The tab that leads the store now owns the repair and the other tabs follow it. Web merchants receive this through WCPOS plugin 1.10.18, which serves the storage worker; desktop and phone apps carry it in this release.
 - **Voiding an order the server had refused no longer fails silently.** When an order could not be created on the server (for example while the till was signed out) and the cashier then voided it, the void raised an error nothing caught and the order stayed in the cart. The till now removes the order and its failed request locally and confirms the removal; any other failure to void shows an error instead of nothing.
 - **A till opened from WordPress admin no longer sends an invalid sign-in token on its first requests.** A request made before a token was stored carried the word "undefined" as its credential, which the server rejected as an invalid token instead of falling back to the WordPress login session. Such requests now carry no token, and a retry after a token refresh no longer keeps the old token in the request address.
 - **A plugin update no longer restores cashier permissions the merchant had removed.** Every update re-granted every default capability, so a store that had turned off product or coupon editing for cashiers saw it come back after each release. Updates now grant only capabilities that are new since the last update; a deleted cashier role is still recreated whole.
@@ -146,7 +153,7 @@ Full details are in our [privacy policy](https://wcpos.com/privacy).
 
 = 1.10.17 - 2026/09/17 =
 
-- **A till no longer gets stuck at login on "Something went wrong: useStoreSession must be called within an active store session".** A damaged range in the till's local database made the login write fail and left the cashier on a red banner. The write is now repaired and retried, and if the saved session still cannot be honoured the till returns to the store list with a message instead of the banner. If the site has to be added again, it opens a fresh local database and does not pick up sales still waiting to sync in the old one. Web merchants receive the storage repair through WooCommerce POS plugin 1.10.17, which serves the storage worker; desktop and phone apps carry it in this release.
+- **A till no longer gets stuck at login on "Something went wrong: useStoreSession must be called within an active store session".** A damaged range in the till's local database made the login write fail and left the cashier on a red banner. The write is now repaired and retried, and if the saved session still cannot be honoured the till returns to the store list with a message instead of the banner. If the site has to be added again, it opens a fresh local database and does not pick up sales still waiting to sync in the old one. Web merchants receive the storage repair through WCPOS plugin 1.10.17, which serves the storage worker; desktop and phone apps carry it in this release.
 - **A newly connected till no longer misses a stock change made in its first minute.** A product set out of stock on the server shortly after a new device, login or reset stayed "in stock" on the till indefinitely. The till now records the server's position before the first browse, so the change arrives with the next sync.
 - **A variation whose stock is managed at product level shows the right stock in the variation picker.** When the parent product sold out, the picker's badge and Add to Cart button kept saying "in stock" for up to five minutes. They now read the parent's stock, the same way the cart does.
 - **Switching stores no longer carries the previous store into the first requests of the new one.** Requests made while a switch was still completing used the outgoing store, so the first products or barcodes could belong to it until the next sync. Pro multi-store only.
