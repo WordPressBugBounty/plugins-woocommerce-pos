@@ -4,7 +4,7 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInitf5acc9df592adc31d4b15ea17eae4db1
+class ComposerStaticInit61f6cbab11a1beacf52c0ed88ac44469
 {
     public static $files = array (
         '23c18046f52bef3eea034657bafda50f' => __DIR__ . '/..' . '/symfony/polyfill-php81/bootstrap.php',
@@ -368,6 +368,7 @@ class ComposerStaticInitf5acc9df592adc31d4b15ea17eae4db1
         'WCPOS\\WooCommercePOS\\API\\V2\\Ping' => __DIR__ . '/../..' . '/includes/API/V2/Ping.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Proxy\\Coupons_Proxy_Behavior' => __DIR__ . '/../..' . '/includes/API/V2/Proxy/Coupons_Proxy_Behavior.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Proxy\\Customers_Proxy_Behavior' => __DIR__ . '/../..' . '/includes/API/V2/Proxy/Customers_Proxy_Behavior.php',
+        'WCPOS\\WooCommercePOS\\API\\V2\\Proxy\\Fast_Path_Behavior' => __DIR__ . '/../..' . '/includes/API/V2/Proxy/Fast_Path_Behavior.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Proxy\\Null_Proxy_Behavior' => __DIR__ . '/../..' . '/includes/API/V2/Proxy/Null_Proxy_Behavior.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Proxy\\Orders_Proxy_Behavior' => __DIR__ . '/../..' . '/includes/API/V2/Proxy/Orders_Proxy_Behavior.php',
         'WCPOS\\WooCommercePOS\\API\\V2\\Proxy\\Products_Proxy_Behavior' => __DIR__ . '/../..' . '/includes/API/V2/Proxy/Products_Proxy_Behavior.php',
@@ -489,6 +490,7 @@ class ComposerStaticInitf5acc9df592adc31d4b15ea17eae4db1
         'WCPOS\\WooCommercePOS\\Services\\Receipt_Snapshot_Store' => __DIR__ . '/../..' . '/includes/Services/Receipt_Snapshot_Store.php',
         'WCPOS\\WooCommercePOS\\Services\\Receipt_Store_Resolver' => __DIR__ . '/../..' . '/includes/Services/Receipt_Store_Resolver.php',
         'WCPOS\\WooCommercePOS\\Services\\Request_Lane' => __DIR__ . '/../..' . '/includes/Services/Request_Lane.php',
+        'WCPOS\\WooCommercePOS\\Services\\Role_Meta_Guard' => __DIR__ . '/../..' . '/includes/Services/Role_Meta_Guard.php',
         'WCPOS\\WooCommercePOS\\Services\\Service_Groups' => __DIR__ . '/../..' . '/includes/Services/Service_Groups.php',
         'WCPOS\\WooCommercePOS\\Services\\Session_Context' => __DIR__ . '/../..' . '/includes/Services/Session_Context.php',
         'WCPOS\\WooCommercePOS\\Services\\Session_Registry' => __DIR__ . '/../..' . '/includes/Services/Session_Registry.php',
@@ -601,10 +603,10 @@ class ComposerStaticInitf5acc9df592adc31d4b15ea17eae4db1
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInitf5acc9df592adc31d4b15ea17eae4db1::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInitf5acc9df592adc31d4b15ea17eae4db1::$prefixDirsPsr4;
-            $loader->prefixesPsr0 = ComposerStaticInitf5acc9df592adc31d4b15ea17eae4db1::$prefixesPsr0;
-            $loader->classMap = ComposerStaticInitf5acc9df592adc31d4b15ea17eae4db1::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit61f6cbab11a1beacf52c0ed88ac44469::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit61f6cbab11a1beacf52c0ed88ac44469::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInit61f6cbab11a1beacf52c0ed88ac44469::$prefixesPsr0;
+            $loader->classMap = ComposerStaticInit61f6cbab11a1beacf52c0ed88ac44469::$classMap;
 
         }, null, ClassLoader::class);
     }

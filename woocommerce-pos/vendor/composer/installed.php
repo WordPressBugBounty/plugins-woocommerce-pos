@@ -1,9 +1,9 @@
 <?php return array(
     'root' => array(
         'name' => 'wcpos/woocommerce-pos',
-        'pretty_version' => 'v1.10.20',
-        'version' => '1.10.20.0',
-        'reference' => '72da8971e84e258e47c3062e8a34f9dcde59fb86',
+        'pretty_version' => 'v1.10.22',
+        'version' => '1.10.22.0',
+        'reference' => '3c24d58df64aa9b54d50c5cf571c715952acd5d8',
         'type' => 'wordpress-plugin',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -71,9 +71,9 @@
             'dev_requirement' => false,
         ),
         'symfony/polyfill-php80' => array(
-            'pretty_version' => 'v1.37.0',
-            'version' => '1.37.0.0',
-            'reference' => 'dfb55726c3a76ea3b6459fcfda1ec2d80a682411',
+            'pretty_version' => 'v1.43.0',
+            'version' => '1.43.0.0',
+            'reference' => '9c6a5d6b01ca51d486c813e9a9c0ed55f208bb74',
             'type' => 'library',
             'install_path' => __DIR__ . '/../symfony/polyfill-php80',
             'aliases' => array(),
@@ -89,9 +89,9 @@
             'dev_requirement' => false,
         ),
         'wcpos/woocommerce-pos' => array(
-            'pretty_version' => 'v1.10.20',
-            'version' => '1.10.20.0',
-            'reference' => '72da8971e84e258e47c3062e8a34f9dcde59fb86',
+            'pretty_version' => 'v1.10.22',
+            'version' => '1.10.22.0',
+            'reference' => '3c24d58df64aa9b54d50c5cf571c715952acd5d8',
             'type' => 'wordpress-plugin',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

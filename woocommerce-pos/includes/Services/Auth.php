@@ -86,6 +86,44 @@ class Auth {
 	}
 
 	/**
+	 * On `wp_logout`: end the web POS session named by this browser's cookie.
+	 *
+	 * Sessions of native apps and other browsers stay live. The cookie itself is left alone.
+	 *
+	 * @param mixed $user_id ID of the user logging out.
+	 */
+	public static function revoke_web_session_on_logout( $user_id ): void {
+		if ( absint( $user_id ) > 0 ) {
+			self::instance()->cleanup_previous_web_session( absint( $user_id ) );
+		}
+	}
+
+	/**
+	 * On `password_reset`: end every POS session of the user.
+	 *
+	 * @param mixed $user User whose password is being reset.
+	 */
+	public static function revoke_sessions_on_password_reset( $user ): void {
+		if ( $user instanceof WP_User ) {
+			self::instance()->revoke_all_refresh_tokens( $user->ID );
+		}
+	}
+
+	/**
+	 * On `profile_update`: end every POS session of the user when the password changed.
+	 *
+	 * @param mixed $user_id       ID of the updated user.
+	 * @param mixed $old_user_data User data before the update.
+	 */
+	public static function revoke_sessions_on_password_change( $user_id, $old_user_data = null ): void {
+		$user = get_userdata( absint( $user_id ) );
+
+		if ( $old_user_data instanceof WP_User && $user instanceof WP_User && $old_user_data->user_pass !== $user->user_pass ) {
+			self::instance()->revoke_all_refresh_tokens( $user->ID );
+		}
+	}
+
+	/**
 	 * Extract a WCPOS token from an authorization value.
 	 *
 	 * @param mixed $auth_value Authorization value.
@@ -251,13 +289,22 @@ class Auth {
 					);
 				}
 
-				// The session is live: record that, so eviction can tell a device that is
-				// working right now from one that has not been seen in a week.
+				// The session registry is authoritative; the blacklist transient above is only a
+				// fast path that can be evicted or purged. Once the session is live, record that,
+				// so eviction can tell a device working right now from one unseen for a week.
 				if ( isset( $decoded_token->refresh_jti ) ) {
-					$this->sessions->touch(
-						absint( $decoded_token->data->user->id ),
-						(string) $decoded_token->refresh_jti
-					);
+					$user_id     = absint( $decoded_token->data->user->id );
+					$refresh_jti = (string) $decoded_token->refresh_jti;
+
+					if ( ! $this->sessions->is_live( $user_id, $refresh_jti ) ) {
+						return new WP_Error(
+							'woocommerce_pos_auth_session_revoked',
+							'Session has been revoked',
+							array( 'status' => 403 )
+						);
+					}
+
+					$this->sessions->touch( $user_id, $refresh_jti );
 				}
 			}
 
@@ -592,7 +639,9 @@ class Auth {
 		 * Before the first row read on this path. A refresh loads the whole session row —
 		 * `is_live()` below, then `refresh_activity()` — so it needs
 		 * the same protection a login has against a row too large to read (#1776).
-		 * Validating an ACCESS token needs no such guard: it no longer touches the row.
+		 * Validating an ACCESS token READS the row through `is_live()` but never writes it,
+		 * and runs no guard because `guard_row()` can write; the read primes the user meta
+		 * cache that WordPress fills anyway to read the user's capabilities, so it adds no query.
 		 */
 		$this->sessions->guard_row( absint( $decoded->data->user->id ) );
 
