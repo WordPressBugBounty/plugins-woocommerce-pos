@@ -5,6 +5,7 @@ namespace WCPOS\Vendor\Sentry\Integration;
 
 use WCPOS\Vendor\Psr\Log\LoggerInterface;
 use WCPOS\Vendor\Psr\Log\NullLogger;
+use WCPOS\Vendor\Sentry\DataCollection\DataCollectionPolicy;
 use WCPOS\Vendor\Sentry\Event;
 use WCPOS\Vendor\Sentry\Frame;
 use WCPOS\Vendor\Sentry\SentrySdk;
@@ -41,7 +42,7 @@ final class FrameContextifierIntegration implements IntegrationInterface
             if ($client === null) {
                 return $event;
             }
-            $maxContextLines = $client->getOptions()->getContextLines();
+            $maxContextLines = DataCollectionPolicy::fromOptions($client->getOptions())->getFrameContextLines();
             $integration = $client->getIntegration(self::class);
             if ($integration === null || $maxContextLines === null) {
                 return $event;
