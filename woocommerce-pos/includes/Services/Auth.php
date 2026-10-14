@@ -21,6 +21,11 @@ use const HOUR_IN_SECONDS;
  */
 class Auth {
 	/**
+	 * Replace a session about to expire so the page's refresh token does not die within the hour.
+	 */
+	private const WEB_SESSION_REUSE_MIN_REMAINING = DAY_IN_SECONDS;
+
+	/**
 	 * Maximum retained idle sessions.
 	 *
 	 * @deprecated Use Session_Registry::MAX_SESSIONS_PER_USER.
@@ -170,7 +175,7 @@ class Auth {
 	 * Checks multiple sources for the authorization token:
 	 * 1. HTTP_AUTHORIZATION server variable (standard)
 	 * 2. REDIRECT_HTTP_AUTHORIZATION (Apache CGI workaround)
-	 * 3. authorization query parameter (for servers that strip auth headers)
+	 * 3. authorization query parameter, on REST requests only (for hosts that strip auth headers; never a page load)
 	 *
 	 * @return false|string The authorization value or false if not found.
 	 */
@@ -185,12 +190,55 @@ class Auth {
 			return sanitize_text_field( wp_unslash( $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ) );
 		}
 
-		// Check authorization query param.
-		if ( ! empty( $_GET['authorization'] ) ) {
+		// Query param: REST requests only. A token in a page URL must never sign a browser in.
+		if ( ! empty( $_GET['authorization'] ) && $this->is_rest_request() ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- a bearer credential, not a form.
 			return sanitize_text_field( wp_unslash( $_GET['authorization'] ) );
 		}
 
 		return false;
+	}
+
+	/**
+	 * Whether the current request is served by the REST API.
+	 *
+	 * `?authorization=` is the till's fallback for hosts that strip the Authorization
+	 * header, so it is a REST credential only. Identity is usually resolved from
+	 * WP::init(), before parse_request defines REST_REQUEST, so the URL is matched the
+	 * way core's rest_api_loaded() will route it. Every test here is strict. A REST
+	 * request this misses is still authenticated by API::rest_authentication_errors()
+	 * once REST_REQUEST is defined; a page load it wrongly accepted would be signed in.
+	 *
+	 * @return bool
+	 */
+	private function is_rest_request(): bool {
+		if ( \defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+			return true;
+		}
+
+		// Only the theme front controller (index.php) routes to REST: never wp-admin,
+		// admin-ajax.php, wp-login.php, xmlrpc.php or wp-cron.php.
+		if ( ! wp_using_themes() ) {
+			return false;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- routing marker only.
+		if ( ! empty( $_GET['rest_route'] ) && \is_string( $_GET['rest_route'] ) ) {
+			return true;
+		}
+
+		// The /wp-json/ path form exists only as a rewrite rule.
+		if ( '' === (string) get_option( 'permalink_structure' ) ) {
+			return false;
+		}
+
+		$uri       = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- only matched against a prefix.
+		$path      = trim( (string) wp_parse_url( $uri, PHP_URL_PATH ), '/' );
+		$home_path = trim( (string) wp_parse_url( home_url(), PHP_URL_PATH ), '/' );
+		if ( '' !== $home_path ) {
+			$path = trim( (string) preg_replace( '|^' . preg_quote( $home_path, '|' ) . '|i', '', $path ), '/' );
+		}
+
+		return 1 === preg_match( '#^(?:index\.php/)?' . preg_quote( rest_get_url_prefix(), '#' ) . '(?:/|$)#', $path );
 	}
 
 	/**
@@ -434,6 +482,19 @@ class Auth {
 	 * @return string|WP_Error
 	 */
 	public function generate_refresh_token( WP_User $user ) {
+		return $this->issue_refresh_token( $user );
+	}
+
+	/**
+	 * Sign a new refresh token or reissue one for an existing session.
+	 *
+	 * @param WP_User $user   The user object.
+	 * @param string  $jti    Existing session JTI, or empty to create one.
+	 * @param int     $expire Existing session expiry.
+	 *
+	 * @return string|WP_Error
+	 */
+	private function issue_refresh_token( WP_User $user, string $jti = '', int $expire = 0 ) {
 		// First thing, check the secret key if not exist return a error.
 		if ( ! $this->get_refresh_secret_key() ) {
 			return new WP_Error(
@@ -447,10 +508,11 @@ class Auth {
 
 		/** Valid credentials, the user exists create the according Token */
 		$issued_at = time();
-		$expire    = $this->get_refresh_token_expire( $issued_at );
+		$reuse     = '' !== $jti;
+		$expire    = $reuse ? $expire : $this->get_refresh_token_expire( $issued_at );
 
 		// Generate unique JTI (JWT ID) for refresh token tracking.
-		$jti = wp_generate_uuid4();
+		$jti = $reuse ? $jti : wp_generate_uuid4();
 
 		$token = array(
 			'iss'  => get_bloginfo( 'url' ),
@@ -478,6 +540,12 @@ class Auth {
 		 * @hook woocommerce_pos_jwt_refresh_token_before_sign
 		 */
 		$token = JWT::encode( apply_filters( 'woocommerce_pos_jwt_refresh_token_before_sign', $token, $user ), $this->get_refresh_secret_key(), 'HS256' );
+
+		if ( $reuse ) {
+			$this->sessions->touch( $user->ID, $jti );
+
+			return $token;
+		}
 
 		// Store refresh token JTI for potential revocation.
 		$evicted   = $this->sessions->record( $user->ID, $jti, $expire, Session_Context::from_request() );
@@ -560,17 +628,29 @@ class Auth {
 	 * @return array
 	 */
 	public function get_user_data( WP_User $user, bool $is_web_frontend = false ): array {
-		// For web frontend, revoke previous session to prevent proliferation on page refresh.
-		if ( $is_web_frontend ) {
-			$this->cleanup_previous_web_session( $user->ID );
+		$jti     = $is_web_frontend && isset( $_COOKIE['wcpos_web_session_jti'] ) ? sanitize_text_field( wp_unslash( $_COOKIE['wcpos_web_session_jti'] ) ) : '';
+		$session = '' !== $jti && $this->sessions->is_live( $user->ID, $jti ) ? $this->sessions->entry( $user->ID, $jti ) : array();
+		if ( ! empty( $session ) && $session['expires'] > time() + self::WEB_SESSION_REUSE_MIN_REMAINING ) {
+			$refresh = $this->issue_refresh_token( $user, $jti, (int) $session['expires'] );
+			$access  = $this->generate_access_token_data( $user, $jti );
+			if ( is_wp_error( $refresh ) || is_wp_error( $access ) ) {
+				return array();
+			}
+			$tokens = array(
+				'access_token'  => $access['token'],
+				'refresh_token' => $refresh,
+				'token_type'    => 'Bearer',
+				'expires_at'    => (int) $access['expires_at'],
+			);
+		} else {
+			$tokens = $this->generate_token_pair( $user );
 		}
 
-		$tokens = $this->generate_token_pair( $user );
 		if ( is_wp_error( $tokens ) ) {
 			return array();
 		}
 
-		// For web frontend, store the new session JTI in a cookie for cleanup on next page load.
+		// Track the browser session for page-load reuse and WordPress logout.
 		if ( $is_web_frontend ) {
 			$this->set_web_session_cookie( $tokens['refresh_token'] );
 		}
@@ -815,9 +895,40 @@ class Auth {
 			return true;
 		}
 
-		// Shop managers can manage anyone's sessions.
+		// Shop managers manage everyone's sessions except an administrator's:
+		// the staff rule (#1918) — WooCommerce likewise refuses a manager acting on an administrator.
 		if ( current_user_can( 'manage_woocommerce' ) ) {
+			return ! $this->is_administrator_anywhere( $target_user_id );
+		}
+
+		return false;
+	}
+
+	/**
+	 * Whether a user administers this site or, on a network, any site.
+	 *
+	 * POS sessions are one network-wide user-meta row with no site id, so a manager on one
+	 * subsite must not reach the sessions of a user who is an administrator on another.
+	 *
+	 * @param int $user_id The user to check.
+	 */
+	private function is_administrator_anywhere( int $user_id ): bool {
+		if ( user_can( $user_id, 'manage_options' ) ) {
 			return true;
+		}
+		if ( ! is_multisite() ) {
+			return false;
+		}
+		if ( is_super_admin( $user_id ) ) {
+			return true;
+		}
+		// Every site the user belongs to, archived, spam and deleted ones included: an administrator
+		// of a parked site still must not be reachable by a manager elsewhere on the network.
+		foreach ( array_keys( get_blogs_of_user( $user_id, true ) ) as $blog_id ) {
+			// A WP_User built for a site id carries that site's capabilities; no blog switch needed.
+			if ( ( new \WP_User( $user_id, '', (int) $blog_id ) )->has_cap( 'manage_options' ) ) {
+				return true;
+			}
 		}
 
 		return false;
@@ -988,11 +1099,7 @@ class Auth {
 	}
 
 	/**
-	 * Clean up previous web session to prevent session proliferation.
-	 *
-	 * The web application generates new tokens on every page load. This method
-	 * revokes the previous session (stored in a cookie) so only one web session
-	 * exists per browser at a time.
+	 * Revoke this browser's web session on WordPress logout.
 	 *
 	 * @param int $user_id The user ID.
 	 */
@@ -1019,6 +1126,10 @@ class Auth {
 	 * @param string $refresh_token The refresh token to extract JTI from.
 	 */
 	private function set_web_session_cookie( string $refresh_token ): void {
+		if ( headers_sent() ) {
+			return;
+		}
+
 		$decoded = $this->validate_token( $refresh_token, 'refresh' );
 
 		if ( is_wp_error( $decoded ) || empty( $decoded->jti ) ) {

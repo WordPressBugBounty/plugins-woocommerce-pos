@@ -4,14 +4,14 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInitf730412fff9d5521624ad8efc3eb1cf7
+class ComposerStaticInitbc372137b184edc2c6a6cbc5c3e66684
 {
     public static $files = array (
         '23c18046f52bef3eea034657bafda50f' => __DIR__ . '/..' . '/symfony/polyfill-php81/bootstrap.php',
         '320cde22f66dd4f5d3fd621d3e88b98f' => __DIR__ . '/..' . '/symfony/polyfill-ctype/bootstrap.php',
         'a4a119a56e50fbb293281d9a48007e0e' => __DIR__ . '/..' . '/symfony/polyfill-php80/bootstrap.php',
         'e39a8b23c42d4e1452234d762b03835a' => __DIR__ . '/..' . '/ramsey/uuid/src/functions.php',
-        '3a423edb2f547143271d27d6a0e9c10d' => __DIR__ . '/../..' . '/includes/API/class-aliases.php',
+        '39cd308644ffb8f06bb4be455420a398' => __DIR__ . '/../..' . '/includes/load-integrity.php',
     );
 
     public static $prefixLengthsPsr4 = array (
@@ -425,6 +425,7 @@ class ComposerStaticInitf730412fff9d5521624ad8efc3eb1cf7
         'WCPOS\\WooCommercePOS\\Interfaces\\Receipt_Renderer_Interface' => __DIR__ . '/../..' . '/includes/Interfaces/Receipt_Renderer_Interface.php',
         'WCPOS\\WooCommercePOS\\Interfaces\\Settings_Section_Interface' => __DIR__ . '/../..' . '/includes/Interfaces/Settings_Section_Interface.php',
         'WCPOS\\WooCommercePOS\\Interfaces\\StoreInterface' => __DIR__ . '/../..' . '/includes/Interfaces/StoreInterface.php',
+        'WCPOS\\WooCommercePOS\\Load_Integrity' => __DIR__ . '/../..' . '/includes/Load_Integrity.php',
         'WCPOS\\WooCommercePOS\\Logger' => __DIR__ . '/../..' . '/includes/Logger.php',
         'WCPOS\\WooCommercePOS\\Orders' => __DIR__ . '/../..' . '/includes/Orders.php',
         'WCPOS\\WooCommercePOS\\Payments\\Abstract_POS_Gateway' => __DIR__ . '/../..' . '/includes/Payments/Abstract_POS_Gateway.php',
@@ -433,6 +434,7 @@ class ComposerStaticInitf730412fff9d5521624ad8efc3eb1cf7
         'WCPOS\\WooCommercePOS\\Payments\\Gateway_Adapter_Interface' => __DIR__ . '/../..' . '/includes/Payments/Gateway_Adapter_Interface.php',
         'WCPOS\\WooCommercePOS\\Payments\\Gateway_Contract' => __DIR__ . '/../..' . '/includes/Payments/Gateway_Contract.php',
         'WCPOS\\WooCommercePOS\\Payments\\Idempotency_Repository' => __DIR__ . '/../..' . '/includes/Payments/Idempotency_Repository.php',
+        'WCPOS\\WooCommercePOS\\Payments\\Paid_Date_Suppression' => __DIR__ . '/../..' . '/includes/Payments/Paid_Date_Suppression.php',
         'WCPOS\\WooCommercePOS\\Pro' => __DIR__ . '/../..' . '/includes/Pro.php',
         'WCPOS\\WooCommercePOS\\Products' => __DIR__ . '/../..' . '/includes/Products.php',
         'WCPOS\\WooCommercePOS\\Rest_Cors' => __DIR__ . '/../..' . '/includes/Rest_Cors.php',
@@ -457,7 +459,7 @@ class ComposerStaticInitf730412fff9d5521624ad8efc3eb1cf7
         'WCPOS\\WooCommercePOS\\Services\\Error_Reporter' => __DIR__ . '/../..' . '/includes/Services/Error_Reporter.php',
         'WCPOS\\WooCommercePOS\\Services\\Extensions' => __DIR__ . '/../..' . '/includes/Services/Extensions.php',
         'WCPOS\\WooCommercePOS\\Services\\Feature_Flags' => __DIR__ . '/../..' . '/includes/Services/Feature_Flags.php',
-        'WCPOS\\WooCommercePOS\\Services\\Fiscal_Receipt_Service' => __DIR__ . '/../..' . '/includes/Services/Fiscal_Receipt_Service.php',
+        'WCPOS\\WooCommercePOS\\Services\\File_Integrity' => __DIR__ . '/../..' . '/includes/Services/File_Integrity.php',
         'WCPOS\\WooCommercePOS\\Services\\Landing_Profile' => __DIR__ . '/../..' . '/includes/Services/Landing_Profile.php',
         'WCPOS\\WooCommercePOS\\Services\\Lifecycle_Events' => __DIR__ . '/../..' . '/includes/Services/Lifecycle_Events.php',
         'WCPOS\\WooCommercePOS\\Services\\Local_Image_Resolver' => __DIR__ . '/../..' . '/includes/Services/Local_Image_Resolver.php',
@@ -487,7 +489,7 @@ class ComposerStaticInitf730412fff9d5521624ad8efc3eb1cf7
         'WCPOS\\WooCommercePOS\\Services\\Receipt_Preview_Fixture_Loader' => __DIR__ . '/../..' . '/includes/Services/Receipt_Preview_Fixture_Loader.php',
         'WCPOS\\WooCommercePOS\\Services\\Receipt_Renderer_Factory' => __DIR__ . '/../..' . '/includes/Services/Receipt_Renderer_Factory.php',
         'WCPOS\\WooCommercePOS\\Services\\Receipt_Sections' => __DIR__ . '/../..' . '/includes/Services/Receipt_Sections.php',
-        'WCPOS\\WooCommercePOS\\Services\\Receipt_Snapshot_Store' => __DIR__ . '/../..' . '/includes/Services/Receipt_Snapshot_Store.php',
+        'WCPOS\\WooCommercePOS\\Services\\Receipt_Snapshot_Cleanup' => __DIR__ . '/../..' . '/includes/Services/Receipt_Snapshot_Cleanup.php',
         'WCPOS\\WooCommercePOS\\Services\\Receipt_Store_Resolver' => __DIR__ . '/../..' . '/includes/Services/Receipt_Store_Resolver.php',
         'WCPOS\\WooCommercePOS\\Services\\Request_Lane' => __DIR__ . '/../..' . '/includes/Services/Request_Lane.php',
         'WCPOS\\WooCommercePOS\\Services\\Role_Meta_Guard' => __DIR__ . '/../..' . '/includes/Services/Role_Meta_Guard.php',
@@ -575,7 +577,6 @@ class ComposerStaticInitf730412fff9d5521624ad8efc3eb1cf7
         'WCPOS\\WooCommercePOS\\Templates\\Barcode_Symbology' => __DIR__ . '/../..' . '/includes/Templates/Barcode_Symbology.php',
         'WCPOS\\WooCommercePOS\\Templates\\Frontend' => __DIR__ . '/../..' . '/includes/Templates/Frontend.php',
         'WCPOS\\WooCommercePOS\\Templates\\Gallery_Registry' => __DIR__ . '/../..' . '/includes/Templates/Gallery_Registry.php',
-        'WCPOS\\WooCommercePOS\\Templates\\Login' => __DIR__ . '/../..' . '/includes/Templates/Login.php',
         'WCPOS\\WooCommercePOS\\Templates\\Payment' => __DIR__ . '/../..' . '/includes/Templates/Payment.php',
         'WCPOS\\WooCommercePOS\\Templates\\Receipt' => __DIR__ . '/../..' . '/includes/Templates/Receipt.php',
         'WCPOS\\WooCommercePOS\\Templates\\Received' => __DIR__ . '/../..' . '/includes/Templates/Received.php',
@@ -603,10 +604,10 @@ class ComposerStaticInitf730412fff9d5521624ad8efc3eb1cf7
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInitf730412fff9d5521624ad8efc3eb1cf7::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInitf730412fff9d5521624ad8efc3eb1cf7::$prefixDirsPsr4;
-            $loader->prefixesPsr0 = ComposerStaticInitf730412fff9d5521624ad8efc3eb1cf7::$prefixesPsr0;
-            $loader->classMap = ComposerStaticInitf730412fff9d5521624ad8efc3eb1cf7::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInitbc372137b184edc2c6a6cbc5c3e66684::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInitbc372137b184edc2c6a6cbc5c3e66684::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInitbc372137b184edc2c6a6cbc5c3e66684::$prefixesPsr0;
+            $loader->classMap = ComposerStaticInitbc372137b184edc2c6a6cbc5c3e66684::$classMap;
 
         }, null, ClassLoader::class);
     }

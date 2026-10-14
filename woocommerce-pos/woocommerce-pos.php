@@ -3,7 +3,7 @@
  * Plugin Name:       WCPOS – Point of Sale for WooCommerce
  * Plugin URI:        https://wordpress.org/plugins/woocommerce-pos/
  * Description:       A simple front-end for taking WooCommerce orders at the Point of Sale. Requires <a href="http://wordpress.org/plugins/woocommerce/">WooCommerce</a>.
- * Version:           1.10.27
+ * Version:           1.11.0
  * Author:            kilbot
  * Author URI:        http://wcpos.com
  * Text Domain:       woocommerce-pos
@@ -25,7 +25,7 @@ namespace WCPOS\WooCommercePOS;
 
 // Define plugin constants (use define() with checks to avoid conflicts when Pro plugin is active).
 if ( ! \defined( __NAMESPACE__ . '\VERSION' ) ) {
-	\define( __NAMESPACE__ . '\VERSION', '1.10.27' );
+	\define( __NAMESPACE__ . '\VERSION', '1.11.0' );
 }
 
 /*
@@ -133,7 +133,9 @@ function wcpos_load_autoloaders(): void { // phpcs:ignore WordPress.NamingConven
 }
 
 wcpos_load_autoloaders();
-require_once __DIR__ . '/includes/API/class-aliases.php';
+if ( is_file( __DIR__ . '/includes/API/class-aliases.php' ) ) { // Absent only mid-update; see includes/load-integrity.php.
+	require_once __DIR__ . '/includes/API/class-aliases.php';
+}
 
 if ( \defined( 'WP_CLI' ) && WP_CLI ) {
 	if ( ! class_exists( \WCPOS\WooCommercePOS\Services\Anon_ID::class ) ) {
@@ -182,6 +184,24 @@ add_action(
 	}
 );
 
+/**
+ * Check whether the request path must bypass page caching.
+ *
+ * @param string $request_uri Raw request URI.
+ * @param string $home_path   Site home URL path.
+ * @return bool
+ */
+function woocommerce_pos_is_uncacheable_request( string $request_uri, string $home_path ): bool {
+	$path      = (string) wp_parse_url( $request_uri, PHP_URL_PATH );
+	$home_path = '/' . trim( $home_path, '/' );
+
+	if ( '/' !== $home_path && 0 === stripos( $path, $home_path . '/' ) ) {
+		$path = substr( $path, strlen( $home_path ) );
+	}
+
+	return 1 === preg_match( '#^(wcpos-auth|wcpos-checkout)(/|$)#i', trim( $path, '/' ) );
+}
+
 // Caching can cause all sorts of issues with the POS, so we attempt to disable caching for POS templates.
 add_action(
 	'plugins_loaded',
@@ -191,7 +211,8 @@ add_action(
 			return;
 		}
 
-		if ( preg_match( '#^/(wcpos-login|wcpos-checkout)(/|$)#i', sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) ) ) {
+		// The auth page renders a per-request CSRF state and must never be served from a page cache.
+		if ( woocommerce_pos_is_uncacheable_request( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ), (string) wp_parse_url( home_url(), PHP_URL_PATH ) ) ) {
 			// 1) Hard kill all LSCache features (cache + optimisation).
 			if ( ! \defined( 'LITESPEED_DISABLE_ALL' ) ) {
 				\define( 'LITESPEED_DISABLE_ALL', true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- third-party constant.

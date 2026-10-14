@@ -69,6 +69,7 @@ function woocommerce_pos_uninstall_cron_hooks(): array {
 		'wcpos_cloud_print_submit',
 		'wcpos_relay_reregister',
 		'wcpos_analytics_group_refresh',
+		'wcpos_file_integrity_check',
 		// Legacy (pre-unified-journal) purge hook.
 		'wcpos_change_log_purge',
 	);
@@ -398,6 +399,10 @@ function woocommerce_pos_uninstall_site( ?bool $remove_all = null ): void {
 	foreach ( woocommerce_pos_uninstall_cron_hooks() as $hook ) {
 		wp_unschedule_hook( $hook );
 	}
+	if ( function_exists( 'as_unschedule_all_actions' ) ) {
+		as_unschedule_all_actions( 'wcpos_receipt_snapshot_cleanup', array(), 'wcpos' );
+	}
+	wp_clear_scheduled_hook( 'wcpos_receipt_snapshot_cleanup' );
 
 	// 2. Drop plugin tables. All are derived from WooCommerce data and are
 	// rebuilt on reinstall.
@@ -472,7 +477,6 @@ function woocommerce_pos_uninstall_site( ?bool $remove_all = null ): void {
 				$wpdb->esc_like( 'wcpos_active_template_' ) . '%',
 				$wpdb->esc_like( 'wcpos_template_order_' ) . '%',
 				$wpdb->esc_like( 'wcpos_disabled_virtual_templates_' ) . '%',
-				$wpdb->esc_like( 'wcpos_receipt_sequence_counter' ),
 			)
 		);
 	}
@@ -559,5 +563,6 @@ if ( \defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 	// Network-wide surfaces, once: user meta is a shared table, and the
 	// object-cache flush is global.
 	woocommerce_pos_uninstall_user_meta();
+	delete_site_option( 'woocommerce_pos_file_integrity' ); // File_Integrity::RESULT_OPTION, stored network-wide.
 	wp_cache_flush();
 }
