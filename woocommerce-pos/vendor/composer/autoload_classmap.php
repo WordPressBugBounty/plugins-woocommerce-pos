@@ -387,6 +387,7 @@ return array(
     'WCPOS\\WooCommercePOS\\Services\\Opening_Hours_Formatter' => $baseDir . '/includes/Services/Opening_Hours_Formatter.php',
     'WCPOS\\WooCommercePOS\\Services\\Order_Notes' => $baseDir . '/includes/Services/Order_Notes.php',
     'WCPOS\\WooCommercePOS\\Services\\Order_Write_Intent' => $baseDir . '/includes/Services/Order_Write_Intent.php',
+    'WCPOS\\WooCommercePOS\\Services\\Pdf_Font_Metrics' => $baseDir . '/includes/Services/Pdf_Font_Metrics.php',
     'WCPOS\\WooCommercePOS\\Services\\Pdf_Layout_Preprocessor' => $baseDir . '/includes/Services/Pdf_Layout_Preprocessor.php',
     'WCPOS\\WooCommercePOS\\Services\\Pdf_Renderer' => $baseDir . '/includes/Services/Pdf_Renderer.php',
     'WCPOS\\WooCommercePOS\\Services\\Permission_Rules' => $baseDir . '/includes/Services/Permission_Rules.php',
