@@ -24,6 +24,14 @@ final class FrameContextifierIntegration implements IntegrationInterface
      */
     private $logger;
     /**
+     * @var array<string, array{
+     *     pre_context: string[],
+     *     context_line: string|null,
+     *     post_context: string[]
+     * }> The excerpts read while processing the current event, keyed by "file:line"
+     */
+    private $excerptCache = [];
+    /**
      * Creates a new instance of this integration.
      *
      * @param LoggerInterface|null $logger A PSR-3 logger
@@ -47,14 +55,18 @@ final class FrameContextifierIntegration implements IntegrationInterface
             if ($integration === null || $maxContextLines === null) {
                 return $event;
             }
-            $stacktrace = $event->getStacktrace();
-            if ($stacktrace !== null) {
-                $integration->addContextToStacktraceFrames($maxContextLines, $stacktrace);
-            }
-            foreach ($event->getExceptions() as $exception) {
-                if ($exception->getStacktrace() !== null) {
-                    $integration->addContextToStacktraceFrames($maxContextLines, $exception->getStacktrace());
+            try {
+                $stacktrace = $event->getStacktrace();
+                if ($stacktrace !== null) {
+                    $integration->addContextToStacktraceFrames($maxContextLines, $stacktrace);
                 }
+                foreach ($event->getExceptions() as $exception) {
+                    if ($exception->getStacktrace() !== null) {
+                        $integration->addContextToStacktraceFrames($maxContextLines, $exception->getStacktrace());
+                    }
+                }
+            } finally {
+                $integration->excerptCache = [];
             }
             return $event;
         });
@@ -106,6 +118,10 @@ final class FrameContextifierIntegration implements IntegrationInterface
      */
     private function getSourceCodeExcerpt(int $maxContextLines, string $filePath, int $lineNumber) : array
     {
+        $cacheKey = $filePath . ':' . $lineNumber;
+        if (isset($this->excerptCache[$cacheKey])) {
+            return $this->excerptCache[$cacheKey];
+        }
         $frame = ['pre_context' => [], 'context_line' => null, 'post_context' => []];
         $target = \max(0, $lineNumber - ($maxContextLines + 1));
         $currentLineNumber = $target + 1;
@@ -129,6 +145,7 @@ final class FrameContextifierIntegration implements IntegrationInterface
                 }
                 $file->next();
             }
+            $this->excerptCache[$cacheKey] = $frame;
         } catch (\Throwable $exception) {
             $this->logger->warning(\sprintf('Failed to get the source code excerpt for the file "%s".', $filePath), ['exception' => $exception]);
         }

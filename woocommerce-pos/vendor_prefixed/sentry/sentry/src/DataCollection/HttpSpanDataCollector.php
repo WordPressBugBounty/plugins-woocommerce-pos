@@ -6,6 +6,8 @@ namespace WCPOS\Vendor\Sentry\DataCollection;
 use WCPOS\Vendor\Psr\Http\Message\RequestInterface;
 use WCPOS\Vendor\Psr\Http\Message\ResponseInterface;
 use WCPOS\Vendor\Psr\Http\Message\ServerRequestInterface;
+use WCPOS\Vendor\Sentry\Exception\JsonException;
+use WCPOS\Vendor\Sentry\Util\JSON;
 /**
  * Collects request and response data (cookies, headers, body) and returns them as array
  * with the proper span attribute names.
@@ -181,7 +183,8 @@ final class HttpSpanDataCollector
         if ($name === '') {
             return KeyValueDataFilter::FILTERED_VALUE;
         }
-        if (!\is_scalar($value)) {
+        // Cleared cookies have no value, which must not look like a filtered value
+        if ($value !== null && !\is_scalar($value)) {
             return $name . '=' . KeyValueDataFilter::FILTERED_VALUE;
         }
         return $name . '=' . (string) $value;
@@ -194,7 +197,11 @@ final class HttpSpanDataCollector
     private static function formatBody(HttpMessageType $type, $body) : array
     {
         if (\is_array($body)) {
-            $body = \json_encode($body) ?: KeyValueDataFilter::FILTERED_VALUE;
+            try {
+                $body = JSON::encode($body);
+            } catch (JsonException $exception) {
+                $body = KeyValueDataFilter::FILTERED_VALUE;
+            }
         }
         if (!\is_string($body)) {
             return [];

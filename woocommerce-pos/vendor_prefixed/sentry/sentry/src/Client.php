@@ -28,7 +28,7 @@ class Client implements ClientInterface
     /**
      * The version of the SDK.
      */
-    public const SDK_VERSION = '4.33.2';
+    public const SDK_VERSION = '4.34.0';
     /**
      * Regex pattern to detect if a string is a regex pattern (starts and ends with / optionally followed by flags).
      * Supported flags: i (case-insensitive), m (multiline), s (dotall), u (unicode).

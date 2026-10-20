@@ -14,7 +14,27 @@ final class KeyValueDataFilter
      * Values deeper than this limit are filtered. The top-level dictionary has depth 0.
      */
     private const MAX_DEPTH = 5;
-    private const SENSITIVE_DATA_DENYLIST = ['auth', 'token', 'secret', 'password', 'passwd', 'pwd', 'key', 'jwt', 'bearer', 'sso', 'saml', 'csrf', 'xsrf', 'credentials', 'session', 'sid', 'identity'];
+    private const SENSITIVE_DATA_DENYLIST = [
+        'auth',
+        'token',
+        'secret',
+        'password',
+        'passwd',
+        'pwd',
+        'key',
+        'jwt',
+        'bearer',
+        'sso',
+        'saml',
+        'csrf',
+        'xsrf',
+        'credentials',
+        'session',
+        'sid',
+        'identity',
+        // Filters the "remember me" cookies of Laravel and Symfony
+        'remember',
+    ];
     private const EXCLUDED_HEADERS = ['cookie', 'set-cookie'];
     /**
      * @var string|null
