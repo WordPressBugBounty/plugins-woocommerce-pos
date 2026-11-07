@@ -25,6 +25,7 @@
                 "vimeo/psalm": "4.9.2"
             },
             "time": "2021-08-15T20:50:18+00:00",
+            "published-time": "2021-08-15T20:52:20+00:00",
             "type": "library",
             "installation-source": "dist",
             "autoload": {
@@ -86,6 +87,7 @@
                 "phpunit/phpunit": "^7.5|^8.5|^9.6"
             },
             "time": "2026-02-16T11:41:01+00:00",
+            "published-time": "2026-02-16T12:37:29+00:00",
             "type": "library",
             "installation-source": "dist",
             "autoload": {
@@ -145,6 +147,7 @@
                 "yoast/phpunit-polyfills": "^2.0"
             },
             "time": "2026-05-10T04:13:08+00:00",
+            "published-time": "2026-05-10T04:16:00+00:00",
             "type": "library",
             "installation-source": "dist",
             "autoload": {
@@ -220,6 +223,7 @@
                 "vimeo/psalm": "^5.4"
             },
             "time": "2022-12-27T19:12:24+00:00",
+            "published-time": "2022-12-27T19:16:58+00:00",
             "type": "library",
             "extra": {
                 "captainhook": {
@@ -328,6 +332,7 @@
                 "ramsey/uuid-doctrine": "Allows the use of Ramsey\\Uuid\\Uuid as Doctrine field type."
             },
             "time": "2021-09-25T23:10:38+00:00",
+            "published-time": "2021-09-26T22:04:03+00:00",
             "type": "library",
             "extra": {
                 "captainhook": {
@@ -397,6 +402,7 @@
                 "ext-ctype": "For best performance"
             },
             "time": "2026-04-10T16:19:22+00:00",
+            "published-time": "2026-04-26T14:44:50+00:00",
             "type": "library",
             "extra": {
                 "thanks": {
@@ -477,6 +483,7 @@
                 "php": ">=7.2"
             },
             "time": "2026-09-25T15:50:05+00:00",
+            "published-time": "2026-09-30T10:23:35+00:00",
             "type": "library",
             "extra": {
                 "thanks": {
@@ -564,6 +571,7 @@
                 "php": ">=7.2"
             },
             "time": "2026-05-26T12:45:58+00:00",
+            "published-time": "2026-05-26T13:40:34+00:00",
             "type": "library",
             "extra": {
                 "thanks": {
