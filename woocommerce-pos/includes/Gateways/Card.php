@@ -26,20 +26,13 @@ class Card extends Abstract_POS_Gateway {
 		$this->id          = 'pos_card';
 		$this->title       = /* translators: POS payment gateway label shown during checkout. */ __( 'Card', 'woocommerce-pos' );
 		$this->description = '';
-		$this->icon        = apply_filters( 'woocommerce_pos_card_icon', '' );
+		$this->icon = apply_filters( 'wcpos_card_icon', '' );
+		$this->icon = apply_filters_deprecated( 'woocommerce_pos_card_icon', array( $this->icon ), '2.0.0', 'wcpos_card_icon' );
 		$this->has_fields  = true;
 		$this->enabled     = 'no';
 		$this->supports    = array( 'products', 'refunds' );
 
 		// Actions.
-		// @phpstan-ignore-next-line -- Action hook type mismatch.
-		add_action(
-			'woocommerce_pos_update_options_payment_gateways_' . $this->id,
-			array(
-				$this,
-				'process_admin_options',
-			)
-		);
 		add_action( 'woocommerce_thankyou_pos_card', array( $this, 'calculate_cashback' ) );
 		$this->register_pos_gateway_contract_hooks();
 	}
@@ -48,18 +41,25 @@ class Card extends Abstract_POS_Gateway {
 	 * Display the payment fields in the checkout.
 	 */
 	public function payment_fields(): void {
+		global $wp;
+
+		$order_id = isset( $wp->query_vars['order-pay'] ) ? $wp->query_vars['order-pay'] : null;
+		$order = $order_id ? wc_get_order( $order_id ) : null;
+
 		if ( $this->description ) {
 			echo '<p>' . wp_kses_post( $this->description ) . '</p>';
 		}
 
-		$currency_pos = get_option( 'woocommerce_currency_pos' );
+		$currency_pos = $this->pay_page_currency_position( $order );
+		$currency     = $order && $order->get_currency() ? $order->get_currency() : get_woocommerce_currency();
+		$symbol       = get_woocommerce_currency_symbol( $currency );
 
 		if ( 'left' == $currency_pos || 'left_space' == $currency_pos ) {
-			$left_addon  = '<span class="input-group-addon">' . get_woocommerce_currency_symbol( get_woocommerce_currency() ) . '</span>';
+			$left_addon  = '<span class="input-group-addon">' . $symbol . '</span>';
 			$right_addon = '';
 		} else {
 			$left_addon  = '';
-			$right_addon = '<span class="input-group-addon">' . get_woocommerce_currency_symbol( get_woocommerce_currency() ) . '</span>';
+			$right_addon = '<span class="input-group-addon">' . $symbol . '</span>';
 		}
 
 		echo '

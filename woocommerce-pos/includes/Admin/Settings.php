@@ -13,11 +13,11 @@ namespace WCPOS\WooCommercePOS\Admin;
 use WCPOS\WooCommercePOS\API\V1\Logs;
 use WCPOS\WooCommercePOS\Services\Cloudflare_Detector;
 use WCPOS\WooCommercePOS\Services\Extensions as ExtensionsService;
+use WCPOS\WooCommercePOS\Services\Order_Meta_Store;
 use WCPOS\WooCommercePOS\Services\Settings as SettingsService;
 use const WCPOS\WooCommercePOS\PLUGIN_NAME;
 use const WCPOS\WooCommercePOS\PLUGIN_URL;
 use const WCPOS\WooCommercePOS\TRANSLATION_VERSION;
-use const WCPOS\WooCommercePOS\VERSION;
 
 /**
  * Class Settings.
@@ -41,7 +41,8 @@ class Settings {
 		 *
 		 * @param Settings $this Settings class instance for the current admin context.
 		 */
-		do_action( 'woocommerce_pos_admin_settings_init', $this );
+		do_action( 'wcpos_admin_settings_init', $this );
+		do_action_deprecated( 'woocommerce_pos_admin_settings_init', array( $this ), '2.0.0', 'wcpos_admin_settings_init' );
 	}
 
 	/**
@@ -49,7 +50,7 @@ class Settings {
 	 */
 	public static function display_settings_page(): void {
 		printf(
-			'<div id="woocommerce-pos-settings">
+			'<div id="woocommerce-pos-settings" class="wcpos-admin-app">
 			<div id="woocommerce-pos-js-error" class="wrap">
 				<h1>%s</h1>
 				<p>%s <a href="mailto:support@wcpos.com">support@wcpos.com</a></p>
@@ -100,7 +101,7 @@ class Settings {
 			PLUGIN_NAME . '-settings-styles',
 			PLUGIN_URL . $dir . '/css/settings.css',
 			array(),
-			VERSION
+			Menu::asset_version( $dir . '/css/settings.css' )
 		);
 
 		wp_enqueue_script(
@@ -114,8 +115,18 @@ class Settings {
 				'wp-url',
 				'lodash',
 			),
-			VERSION,
+			Menu::asset_version( $dir . '/js/settings.js' ),
 			true
+		);
+
+		// Native file downloads need the same cookie-auth root and nonce as api-fetch.
+		wp_localize_script(
+			PLUGIN_NAME . '-settings',
+			'wpApiSettings',
+			array(
+				'root' => esc_url_raw( get_rest_url() ),
+				'nonce' => wp_create_nonce( 'wp_rest' ),
+			)
 		);
 
 		wp_add_inline_script( PLUGIN_NAME . '-settings', Menu::get_posthog_inline_script(), 'before' );
@@ -142,7 +153,8 @@ class Settings {
 		$store_country    = function_exists( 'WC' )
 			? WC()->countries->get_base_country()
 			: '';
-		$store_options   = apply_filters( 'woocommerce_pos_cloud_print_store_options', array() );
+		$store_options = apply_filters( 'wcpos_cloud_print_store_options', array() );
+		$store_options = apply_filters_deprecated( 'woocommerce_pos_cloud_print_store_options', array( $store_options ), '2.0.0', 'wcpos_cloud_print_store_options' );
 		$anon_id         = ( new \WCPOS\WooCommercePOS\Services\Anon_ID() )->get();
 		$site_uuid       = get_option( 'woocommerce_pos_uuid', '' );
 
@@ -153,6 +165,8 @@ class Settings {
             order_statuses: %s,
             countries: %s,
             storeCountry: %s,
+            currencySymbol: %s,
+            currencyDecimals: %s,
             cloudPrintStoreOptions: %s,
             updateExtensionsCount: %s,
             unreadLogCounts: %s,
@@ -160,11 +174,21 @@ class Settings {
             anon_id: %s,
             site_uuid: %s
         }; wcpos.translationVersion = %s;',
-			json_encode( array( 'cloudflare' => ( new Cloudflare_Detector() )->detect() ) ),
+			json_encode(
+				array(
+					'cloudflare'    => ( new Cloudflare_Detector() )->detect(),
+					'order_storage' => array(
+						'hpos'         => Order_Meta_Store::hpos(),
+						'settings_url' => admin_url( 'admin.php?page=wc-settings&tab=advanced&section=features' ),
+					),
+				)
+			),
 			json_encode( $barcodes ),
 			json_encode( $order_statuses ),
 			json_encode( $countries ),
 			json_encode( $store_country ),
+			json_encode( html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ) ),
+			json_encode( function_exists( 'wc_get_price_decimals' ) ? wc_get_price_decimals() : 2 ),
 			json_encode( array_values( (array) $store_options ) ),
 			json_encode( $update_ext_count ),
 			json_encode( $unread_logs ),

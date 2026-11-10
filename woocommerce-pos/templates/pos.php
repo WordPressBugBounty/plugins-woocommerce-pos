@@ -15,7 +15,8 @@
 	<meta charset="utf-8"/>
 
 	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-	<meta name="theme-color" content="#000000">
+	<!-- The splash colour: the app's --color-splash (apps/main/global.css, @theme static), always light. -->
+	<meta name="theme-color" content="#F0F4F8">
 	<meta name="mobile-web-app-capable" content="yes">
 
 	<link rel="icon" href="<?php echo esc_attr( WCPOS\WooCommercePOS\PLUGIN_URL ); ?>assets/img/favicon.ico">
@@ -27,7 +28,7 @@
 		  href="<?php echo esc_attr( WCPOS\WooCommercePOS\PLUGIN_URL ); ?>assets/img/apple-touch-icon.png">
 
 	<!-- IE 10 Metro tile icon -->
-	<meta name="msapplication-TileColor" content="#323A46">
+	<meta name="msapplication-TileColor" content="#1C2B44">
 	<meta name="msapplication-TileImage"
 		  content="<?php echo esc_attr( WCPOS\WooCommercePOS\PLUGIN_URL ); ?>assets/img/icon-256x256.png">
 
@@ -81,6 +82,8 @@
 		  }
 		}*/
 
+		/* The same splash the app draws once its JS runs (packages/core/src/screens/splash, bg-splash =
+		   --color-splash #F0F4F8 in apps/main/global.css): one colour from the first paint to the POS. */
 		#splash {
 			display: flex;
 			flex-direction: column;
@@ -88,7 +91,7 @@
 			align-items: center;
 			height: 100%;
 			width: 100%;
-			background-color: #fafbfc;
+			background-color: #F0F4F8;
 		}
 
 		#splash img {
@@ -97,7 +100,7 @@
 		}
 	</style>
 
-	<?php do_action( 'woocommerce_pos_head' ); ?>
+	<?php do_action( 'wcpos_head' ); ?>
 </head>
 <body>
 
@@ -109,6 +112,6 @@
 </div>
 
 </body>
-<?php do_action( 'woocommerce_pos_footer' ); ?>
+<?php do_action( 'wcpos_footer' ); ?>
 
 </html>

@@ -194,6 +194,10 @@ class Pdf_Renderer {
 	 */
 	private function build( string $html, array $opts ) {
 		$temp_dir = $this->writable_dir();
+		$loader   = new Font_Pack_Loader();
+		if ( ! $loader->installed() ) {
+			Font_Pack_Loader::schedule();
+		}
 
 		$options = new Options();
 		$options->set( 'isRemoteEnabled', false );
@@ -201,8 +205,8 @@ class Pdf_Renderer {
 		$options->set( 'isJavascriptEnabled', false );
 		$options->set( 'imageByteSizeLimit', self::IMAGE_BYTE_SIZE_LIMIT );
 		$options->set( 'defaultFont', isset( $opts['default_font'] ) ? (string) $opts['default_font'] : 'dejavu sans' );
-		// Keep Dompdf's bundled fonts as the font source (default fontDir), but
-		// direct its writable caches at a WCPOS-owned temp dir.
+		// Font packs live in uploads; writable caches stay in the WCPOS temp dir.
+		$options->set( 'fontDir', $loader->dir() );
 		$options->set( 'fontCache', $temp_dir );
 		$options->set( 'tempDir', $temp_dir );
 		// chroot only gates Dompdf's file:// local-URI access (e.g. <img src> /

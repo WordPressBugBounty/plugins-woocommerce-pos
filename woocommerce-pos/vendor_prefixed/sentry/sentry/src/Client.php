@@ -5,11 +5,14 @@ namespace WCPOS\Vendor\Sentry;
 
 use WCPOS\Vendor\Psr\Log\LoggerInterface;
 use WCPOS\Vendor\Psr\Log\NullLogger;
+use WCPOS\Vendor\Sentry\ClientReport\ClientReportAggregator;
+use WCPOS\Vendor\Sentry\ClientReport\Reason;
 use WCPOS\Vendor\Sentry\Integration\IntegrationInterface;
 use WCPOS\Vendor\Sentry\Integration\IntegrationRegistry;
 use WCPOS\Vendor\Sentry\Serializer\RepresentationSerializer;
 use WCPOS\Vendor\Sentry\Serializer\RepresentationSerializerInterface;
 use WCPOS\Vendor\Sentry\State\Scope;
+use WCPOS\Vendor\Sentry\Transport\DataCategory;
 use WCPOS\Vendor\Sentry\Transport\Result;
 use WCPOS\Vendor\Sentry\Transport\TransportInterface;
 /**
@@ -28,7 +31,7 @@ class Client implements ClientInterface
     /**
      * The version of the SDK.
      */
-    public const SDK_VERSION = '4.34.0';
+    public const SDK_VERSION = '4.36.0';
     /**
      * Regex pattern to detect if a string is a regex pattern (starts and ends with / optionally followed by flags).
      * Supported flags: i (case-insensitive), m (multiline), s (dotall), u (unicode).
@@ -125,6 +128,7 @@ class Client implements ClientInterface
         $className = \get_class($exception);
         if ($this->shouldIgnoreException($className)) {
             $this->logger->info('The exception will be discarded because it matches an entry in "ignore_exceptions".', ['className' => $className]);
+            ClientReportAggregator::getInstance()->add(DataCategory::error(), Reason::eventProcessor(), 1);
             return null;
             // short circuit to avoid unnecessary processing
         }
@@ -227,6 +231,12 @@ class Client implements ClientInterface
      */
     private function prepareEvent(Event $event, ?EventHint $hint = null, ?Scope $scope = null) : ?Event
     {
+        $sampleRate = $this->options->getSampleRate();
+        if (EventType::event() === $event->getType() && $sampleRate < 1 && \mt_rand(1, 100) / 100.0 > $sampleRate) {
+            $this->logger->info(\sprintf('The %s will be discarded because it has been sampled.', $this->getEventDescription($event)), ['event' => $event]);
+            ClientReportAggregator::getInstance()->addEvent($event, Reason::sampleRate());
+            return null;
+        }
         if ($hint !== null) {
             if ($hint->exception !== null && empty($event->getExceptions())) {
                 $this->addThrowableToEvent($event, $hint->exception, $hint);
@@ -248,14 +258,7 @@ class Client implements ClientInterface
         if ($event->getEnvironment() === null) {
             $event->setEnvironment($this->options->getEnvironment() ?? Event::DEFAULT_ENVIRONMENT);
         }
-        $eventDescription = \sprintf('%s%s [%s]', $event->getLevel() !== null ? $event->getLevel() . ' ' : '', (string) $event->getType(), (string) $event->getId());
-        $isEvent = EventType::event() === $event->getType();
-        $sampleRate = $this->options->getSampleRate();
-        // only sample with the `sample_rate` on errors/messages
-        if ($isEvent && $sampleRate < 1 && \mt_rand(1, 100) / 100.0 > $sampleRate) {
-            $this->logger->info(\sprintf('The %s will be discarded because it has been sampled.', $eventDescription), ['event' => $event]);
-            return null;
-        }
+        $eventDescription = $this->getEventDescription($event);
         $event = $this->applyIgnoreOptions($event, $eventDescription);
         if ($event === null) {
             return null;
@@ -265,6 +268,7 @@ class Client implements ClientInterface
             $event = $scope->applyToEvent($event, $hint, $this->options);
             if ($event === null) {
                 $this->logger->info(\sprintf('The %s will be discarded because one of the event processors returned "null".', $eventDescription), ['event' => $beforeEventProcessors]);
+                ClientReportAggregator::getInstance()->addEvent($beforeEventProcessors, Reason::eventProcessor());
                 return null;
             }
         }
@@ -272,8 +276,13 @@ class Client implements ClientInterface
         $event = $this->applyBeforeSendCallback($event, $hint);
         if ($event === null) {
             $this->logger->info(\sprintf('The %s will be discarded because the "%s" callback returned "null".', $eventDescription, $this->getBeforeSendCallbackName($beforeSendCallback)), ['event' => $beforeSendCallback]);
+            ClientReportAggregator::getInstance()->addEvent($beforeSendCallback, Reason::beforeSend());
         }
         return $event;
+    }
+    private function getEventDescription(Event $event) : string
+    {
+        return \sprintf('%s%s [%s]', $event->getLevel() !== null ? $event->getLevel() . ' ' : '', (string) $event->getType(), (string) $event->getId());
     }
     /**
      * Checks if an exception should be ignored based on configured patterns.
@@ -331,6 +340,38 @@ class Client implements ClientInterface
         }
         return \false;
     }
+    /**
+     * Gets the HTTP status code of the response from the transaction data.
+     */
+    private function getTransactionHttpStatusCode(Event $event) : ?int
+    {
+        $traceData = $event->getContexts()['trace']['data'] ?? null;
+        $statusCode = \is_array($traceData) ? $traceData['http.response.status_code'] ?? null : null;
+        if (\is_int($statusCode)) {
+            return $statusCode;
+        }
+        return null;
+    }
+    /**
+     * Checks if an HTTP status code matches one of the status codes or
+     * inclusive ranges configured in the "trace_ignore_status_codes" option.
+     */
+    private function shouldIgnoreStatusCode(int $statusCode) : bool
+    {
+        foreach ($this->options->getTraceIgnoreStatusCodes() as $ignoredStatusCode) {
+            if (\is_int($ignoredStatusCode)) {
+                if ($statusCode === $ignoredStatusCode) {
+                    return \true;
+                }
+                continue;
+            }
+            [$min, $max] = $ignoredStatusCode;
+            if ($min <= $statusCode && $statusCode <= $max) {
+                return \true;
+            }
+        }
+        return \false;
+    }
     private function applyIgnoreOptions(Event $event, string $eventDescription) : ?Event
     {
         if ($event->getType() === EventType::event()) {
@@ -341,17 +382,21 @@ class Client implements ClientInterface
             foreach ($exceptions as $exception) {
                 if ($this->shouldIgnoreException($exception->getType())) {
                     $this->logger->info(\sprintf('The %s will be discarded because it matches an entry in "ignore_exceptions".', $eventDescription), ['event' => $event]);
+                    ClientReportAggregator::getInstance()->addEvent($event, Reason::eventProcessor());
                     return null;
                 }
             }
         }
         if ($event->getType() === EventType::transaction()) {
             $transactionName = $event->getTransaction();
-            if ($transactionName === null) {
-                return $event;
-            }
-            if ($this->shouldIgnoreTransaction($transactionName)) {
+            if ($transactionName !== null && $this->shouldIgnoreTransaction($transactionName)) {
                 $this->logger->info(\sprintf('The %s will be discarded because it matches a entry in "ignore_transactions".', $eventDescription), ['event' => $event]);
+                ClientReportAggregator::getInstance()->addEvent($event, Reason::eventProcessor());
+                return null;
+            }
+            $statusCode = $this->getTransactionHttpStatusCode($event);
+            if ($statusCode !== null && $this->shouldIgnoreStatusCode($statusCode)) {
+                $this->logger->info(\sprintf('The %s will be discarded because its HTTP status code %d matches an entry in "trace_ignore_status_codes".', $eventDescription, $statusCode), ['event' => $event]);
                 return null;
             }
         }
@@ -404,6 +449,10 @@ class Client implements ClientInterface
     private function addMissingStacktraceToEvent(Event $event) : void
     {
         if (!$this->options->shouldAttachStacktrace()) {
+            return;
+        }
+        // Only error events carry a stacktrace, for any other type it would be discarded
+        if ($event->getType() !== EventType::event()) {
             return;
         }
         // We should not add a stacktrace when the event already has one or contains exceptions

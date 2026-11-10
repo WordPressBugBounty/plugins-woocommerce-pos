@@ -18,6 +18,7 @@ use WCPOS\WooCommercePOS\Services\Lifecycle_Events;
 use WCPOS\WooCommercePOS\Services\Settings;
 use WCPOS\WooCommercePOS\Templates\Frontend;
 use const WCPOS\WooCommercePOS\PLUGIN_NAME;
+use const WCPOS\WooCommercePOS\PLUGIN_PATH;
 use const WCPOS\WooCommercePOS\PLUGIN_URL;
 use const WCPOS\WooCommercePOS\TRANSLATION_VERSION;
 use const WCPOS\WooCommercePOS\VERSION as PLUGIN_VERSION;
@@ -26,6 +27,11 @@ use const WCPOS\WooCommercePOS\VERSION as PLUGIN_VERSION;
  * Menu class.
  */
 class Menu {
+	/**
+	 * Origin the welcome screen's landing bundle (CSS and JS) loads from.
+	 */
+	const LANDING_CDN_ORIGIN = 'https://cdn.jsdelivr.net';
+
 	/**
 	 * Unique top level menu identifier.
 	 *
@@ -67,8 +73,6 @@ class Menu {
 			add_action( 'admin_footer', array( $this, 'print_upgrade_click_tracking_script' ) );
 			add_action( 'admin_init', array( $this, 'redirect_template_list_page' ) );
 		}
-
-		// add_filter( 'woocommerce_analytics_report_menu_items', array( $this, 'analytics_menu_items' ) );.
 	}
 
 	/**
@@ -107,37 +111,6 @@ class Menu {
 	 */
 	public function display_upgrade_page(): void {
 		include_once 'views/upgrade.php';
-	}
-
-	/**
-	 * Add POS submenu to WooCommerce Analytics menu.
-	 *
-	 * @param array $report_pages The analytics report pages.
-	 */
-	public function analytics_menu_items( array $report_pages ): array {
-		// Find the position of the 'Orders' item.
-		$position = array_search( 'Orders', array_column( $report_pages, 'title' ), true );
-
-		// Use array_splice to add the new item.
-		array_splice(
-			$report_pages,
-			$position + 1,
-			0,
-			array(
-				array(
-					'id'       => 'woocommerce-analytics-pos',
-					'title'    => /* translators: WordPress admin menu label for WCPOS. */ __( 'POS', 'woocommerce-pos' ),
-					'parent'   => 'woocommerce-analytics',
-					'path'     => '/analytics/pos',
-					'nav_args' => array(
-						'order'  => 45,
-						'parent' => 'woocommerce-analytics',
-					),
-				),
-			)
-		);
-
-		return $report_pages;
 	}
 
 	/**
@@ -197,7 +170,7 @@ class Menu {
 			'menu_submenu',
 			admin_url( 'admin.php?page=' . PLUGIN_NAME )
 		);
-		$pos_submenu[1][2] = woocommerce_pos_url();
+		$pos_submenu[1][2] = wcpos_url();
 
 		// The "Upgrade to Pro" submenu link is persistent navigation rendered
 		// on every wp-admin page, so we deliberately do NOT emit an
@@ -222,11 +195,22 @@ class Menu {
 		 * }
 		 */
 		do_action(
-			'woocommerce_pos_register_pos_admin',
+			'wcpos_register_pos_admin',
 			array(
 				'toplevel' => $this->toplevel_screen_id,
 				'settings' => $this->settings_screen_id,
 			)
+		);
+		do_action_deprecated(
+			'woocommerce_pos_register_pos_admin',
+			array(
+				array(
+					'toplevel' => $this->toplevel_screen_id,
+					'settings' => $this->settings_screen_id,
+				),
+			),
+			'2.0.0',
+			'wcpos_register_pos_admin'
 		);
 	}
 
@@ -263,7 +247,11 @@ class Menu {
 
 			$is_development = isset( $_ENV['DEVELOPMENT'] )
 			&& wp_validate_boolean( sanitize_text_field( wp_unslash( $_ENV['DEVELOPMENT'] ) ) );
-			$url            = $is_development ? 'http://localhost:9000/' : 'https://cdn.jsdelivr.net/gh/wcpos/wp-admin-landing@2/assets/';
+			$url            = $is_development ? 'http://localhost:9000/' : self::LANDING_CDN_ORIGIN . '/gh/wcpos/wp-admin-landing@2/assets/';
+
+			if ( ! $is_development ) {
+				add_action( 'admin_print_styles', array( $this, 'print_landing_resource_hints' ), 1 );
+			}
 
 			// Enqueue the landing page CSS from CDN.
 			wp_enqueue_style(
@@ -298,6 +286,32 @@ class Menu {
 			// shares the bundle's localStorage identity, breaks the anon-bucket
 			// exposure, and double-fires CTA tracking.
 			wp_add_inline_script( 'wcpos-welcome', $this->landing_inline_script(), 'before' );
+		}
+	}
+
+	/**
+	 * Print connection warm-up hints for the welcome screen.
+	 *
+	 * Hooked to `admin_print_styles` at priority 1, ahead of core's styles at
+	 * 20, so DNS and TLS setup start before the stylesheets are requested.
+	 * Printed by hand because core hooks `wp_resource_hints` to `wp_head`
+	 * only, so that filter does nothing in wp-admin.
+	 *
+	 * The CDN preconnect has no `crossorigin`: welcome.css and welcome.js load
+	 * as plain `<link>` and `<script>` tags, and browsers keep CORS and
+	 * non-CORS connections apart, so a CORS preconnect would go unused.
+	 * PostHog's requests are CORS, so its preconnect keeps the attribute.
+	 *
+	 * A preconnect sends the merchant's IP to the host, so the PostHog line
+	 * prints only when the persisted tracking consent allows analytics.
+	 */
+	public function print_landing_resource_hints(): void {
+		echo '<link rel="preconnect" href="' . esc_url( self::LANDING_CDN_ORIGIN ) . '">' . "\n";
+		echo '<link rel="dns-prefetch" href="' . esc_url( self::LANDING_CDN_ORIGIN ) . '">' . "\n";
+
+		$analytics = Analytics::instance();
+		if ( $analytics->is_enabled() ) {
+			echo '<link rel="preconnect" href="' . esc_url( $analytics->get_host() ) . '" crossorigin>' . "\n";
 		}
 	}
 
@@ -566,18 +580,31 @@ JS;
 			'wcpos-template-gallery-styles',
 			PLUGIN_URL . $dir . '/css/template-gallery.css',
 			array(),
-			PLUGIN_VERSION
+			self::asset_version( $dir . '/css/template-gallery.css' )
 		);
 
 		wp_enqueue_script(
 			'wcpos-template-gallery',
 			PLUGIN_URL . $dir . '/js/template-gallery.js',
 			array( 'react', 'react-dom', 'wp-api-fetch', \WCPOS\WooCommercePOS\Admin::API_FETCH_METHOD_PARAM_HANDLE, 'wp-url' ),
-			PLUGIN_VERSION,
+			self::asset_version( $dir . '/js/template-gallery.js' ),
 			true
 		);
 
 		wp_add_inline_script( 'wcpos-template-gallery', $this->gallery_inline_script(), 'before' );
+	}
+
+	/**
+	 * Cache-busting version for a built asset: the plugin version plus the file's mtime, so a
+	 * redeploy of the same plugin version (dev sites deploy every merge) is never served stale
+	 * from a long-lived browser cache.
+	 *
+	 * @param string      $relative Path under the plugin directory.
+	 * @param string|null $base     Directory the path is relative to; the plugin directory by default.
+	 */
+	public static function asset_version( string $relative, ?string $base = null ): string {
+		$path = trailingslashit( $base ?? PLUGIN_PATH ) . $relative;
+		return file_exists( $path ) ? PLUGIN_VERSION . '.' . (string) filemtime( $path ) : PLUGIN_VERSION;
 	}
 
 	/**
@@ -597,9 +624,10 @@ JS;
 		 * @since 1.11.2
 		 *
 		 * @param string $url Preview base URL without a trailing slash.
-		 * @hook woocommerce_pos_template_gallery_preview_base_url
+		 * @hook wcpos_template_gallery_preview_base_url
 		 */
-		return apply_filters( 'woocommerce_pos_template_gallery_preview_base_url', $url );
+		$filtered = apply_filters( 'wcpos_template_gallery_preview_base_url', $url );
+		return apply_filters_deprecated( 'woocommerce_pos_template_gallery_preview_base_url', array( $filtered ), '2.0.0', 'wcpos_template_gallery_preview_base_url' );
 	}
 
 	/**
@@ -609,7 +637,7 @@ JS;
 		$json_encode_flags = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT;
 
 		return \sprintf(
-			'var wcpos = wcpos || {}; wcpos.templateGallery = { isProActive: %s, adminUrl: %s, hasPosOrders: %s, previewBaseUrl: %s }; wcpos.translationVersion = %s;',
+			'var wcpos = wcpos || {}; wcpos.templateGallery = { isProActive: %s, adminUrl: %s, hasPosOrders: %s, previewBaseUrl: %s, displayPreviewUrl: %s }; wcpos.translationVersion = %s;',
 			wp_json_encode( wcpos_is_pro_active(), $json_encode_flags ),
 			wp_json_encode( untrailingslashit( admin_url() ), $json_encode_flags ),
 			wp_json_encode(
@@ -624,6 +652,7 @@ JS;
 				$json_encode_flags
 			),
 			wp_json_encode( $this->gallery_preview_base_url(), $json_encode_flags ),
+			wp_json_encode( wcpos_display_url(), $json_encode_flags ),
 			wp_json_encode( TRANSLATION_VERSION, $json_encode_flags )
 		);
 	}

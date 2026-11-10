@@ -3,11 +3,17 @@
 declare (strict_types=1);
 namespace WCPOS\Vendor\Sentry\Tracing;
 
+use WCPOS\Vendor\Sentry\ClientReport\ClientReportAggregator;
+use WCPOS\Vendor\Sentry\ClientReport\Reason;
 use WCPOS\Vendor\Sentry\Event;
 use WCPOS\Vendor\Sentry\EventId;
+use WCPOS\Vendor\Sentry\Profiling\Profile;
 use WCPOS\Vendor\Sentry\Profiling\Profiler;
+use WCPOS\Vendor\Sentry\Profiling\ProfilerInterface;
+use WCPOS\Vendor\Sentry\Profiling\Profiles;
 use WCPOS\Vendor\Sentry\SentrySdk;
 use WCPOS\Vendor\Sentry\State\HubInterface;
+use WCPOS\Vendor\Sentry\Transport\DataCategory;
 /**
  * This class stores all the information about a Transaction.
  */
@@ -30,7 +36,7 @@ final class Transaction extends Span
      */
     protected $metadata;
     /**
-     * @var Profiler|null Reference instance to the {@see Profiler}
+     * @var ProfilerInterface|null
      */
     protected $profiler;
     /**
@@ -100,16 +106,20 @@ final class Transaction extends Span
         $this->spanRecorder->add($this);
         return $this;
     }
-    public function initProfiler() : Profiler
+    public function initProfiler() : ProfilerInterface
     {
         if ($this->profiler === null) {
             $client = $this->hub->getClient();
             $options = $client !== null ? $client->getOptions() : null;
-            $this->profiler = new Profiler($options);
+            if ($options !== null && ($factory = $options->getProfilerFactory()) !== null) {
+                $this->profiler = $factory($options);
+            } else {
+                $this->profiler = new Profiler($options);
+            }
         }
         return $this->profiler;
     }
-    public function getProfiler() : ?Profiler
+    public function getProfiler() : ?ProfilerInterface
     {
         return $this->profiler;
     }
@@ -123,15 +133,20 @@ final class Transaction extends Span
      */
     public function finish(?float $endTimestamp = null) : ?EventId
     {
-        if ($this->profiler !== null) {
-            $this->profiler->stop();
-        }
+        Profiles::getInstance()->continuousProfiler()->stopForRootSpan((string) $this->getSpanId());
         if ($this->endTimestamp !== null) {
             // Transaction was already finished once and we don't want to re-flush it
             return null;
         }
+        $profile = $this->profiler !== null ? $this->finishProfiler($this->profiler) : null;
         parent::finish($endTimestamp);
         if ($this->sampled !== \true) {
+            $client = $this->hub->getClient();
+            // Unsampled transactions have no span recorder, so only the span of the transaction itself is dropped
+            if ($client !== null && $client->getOptions()->isTracingEnabled()) {
+                ClientReportAggregator::getInstance()->add(DataCategory::transaction(), Reason::sampleRate(), 1);
+                ClientReportAggregator::getInstance()->add(DataCategory::span(), Reason::sampleRate(), 1);
+            }
             return null;
         }
         $finishedSpans = [];
@@ -151,12 +166,26 @@ final class Transaction extends Span
         $event->setContext('trace', $this->getTraceContext());
         $event->setSdkMetadata('dynamic_sampling_context', $this->getDynamicSamplingContext());
         $event->setSdkMetadata('transaction_metadata', $this->getMetadata());
-        if ($this->profiler !== null) {
-            $profile = $this->profiler->getProfile();
-            if ($profile !== null) {
-                $event->setSdkMetadata('profile', $profile);
-            }
+        $profilerId = $this->data['profiler_id'] ?? null;
+        if (\is_string($profilerId)) {
+            $event->setContext('profile', ['profiler_id' => $profilerId]);
+        }
+        if ($profile !== null) {
+            $event->setSdkMetadata('profile', $profile);
         }
         return $this->hub->captureEvent($event);
+    }
+    private function finishProfiler(ProfilerInterface $profiler) : ?Profile
+    {
+        try {
+            $profiler->stop();
+            return $this->sampled === \true ? $profiler->getProfile() : null;
+        } catch (\Throwable $exception) {
+            $client = $this->hub->getClient();
+            if ($client !== null) {
+                $client->getOptions()->getLoggerOrNullLogger()->error(\sprintf('Failed to stop the profiler. Reason: "%s".', $exception->getMessage()), ['exception' => $exception]);
+            }
+            return null;
+        }
     }
 }

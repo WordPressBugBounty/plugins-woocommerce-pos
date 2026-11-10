@@ -28,6 +28,29 @@ function woocommerce_pos_uninstall_table_suffixes(): array {
 }
 
 /**
+ * Owned tables holding user-authored bookkeeping: registers, register sessions,
+ * cash movements, closures and fiscal records. Dropped only on a full wipe.
+ *
+ * @return string[] Table name suffixes.
+ */
+function woocommerce_pos_uninstall_configuration_table_suffixes(): array {
+	return array(
+		'wcpos_fiscal_records',
+		'wcpos_register_sessions',
+		// Legacy: closures live on session rows since sync schema 10, movements since schema 11,
+		// and the register in the wcpos_register option since schema 12. A dev build that never
+		// reached the upgrade still holds these tables, or a renamed copy when a fold stopped
+		// between the rename and the drop.
+		'wcpos_closures',
+		'wcpos_closures_folded',
+		'wcpos_cash_movements',
+		'wcpos_cash_movements_folded',
+		'wcpos_registers',
+		'wcpos_registers_folded',
+	);
+}
+
+/**
  * Cron hooks whose scheduled events are cleared on uninstall.
  *
  * @return string[] Hook names.
@@ -40,7 +63,17 @@ function woocommerce_pos_uninstall_cron_hooks(): array {
 		'wcpos_cloud_print_submit',
 		'wcpos_relay_reregister',
 		'wcpos_analytics_group_refresh',
+		'wcpos_payments_sweep',
+		// Fiscal late-check retries (Fiscal_Record_Writers::*_RETRY_HOOK).
+		'wcpos_fiscal_refund_retry',
+		'wcpos_fiscal_allocation_retry',
+		// WP-Cron fallback for the receipt font install (Action Scheduler is the
+		// primary queue; its pending actions are cancelled in the sweep below).
+		'wcpos_install_font_packs',
 		'wcpos_file_integrity_check',
+		// Receipt_Snapshot_Cleanup's WP-Cron fallback (its Action Scheduler action is
+		// cancelled in the sweep below).
+		'wcpos_receipt_snapshot_cleanup',
 		// Legacy (pre-unified-journal) purge hook.
 		'wcpos_change_log_purge',
 	);
@@ -64,8 +97,9 @@ function woocommerce_pos_uninstall_remove_all_data(): bool {
 /**
  * Whether WCPOS Pro is present on this install (active or merely on disk).
  *
- * Pro shares the free plugin's log source and translation namespace, so log
- * and translation cleanup is skipped while Pro may still be using them. The
+ * Pro shares the free plugin's log source and translation namespace, and its
+ * bundled core uses the same sync tables, print-job queue and JWT secrets and
+ * tokens, so that cleanup is skipped while Pro may still be using them. The
  * detection result passes through a filter so tests can pin either state
  * deterministically, regardless of what exists on the checkout's disk —
  * during a real uninstall no plugin code is loaded, so the filter is a
@@ -80,7 +114,8 @@ function woocommerce_pos_uninstall_pro_installed(): bool {
 		$installed       = isset( $network_plugins[ $pro_plugin ] );
 	}
 
-	return (bool) apply_filters( 'woocommerce_pos_uninstall_pro_installed', $installed );
+	$filtered = apply_filters( 'wcpos_uninstall_pro_installed', $installed );
+	return (bool) apply_filters_deprecated( 'woocommerce_pos_uninstall_pro_installed', array( $filtered ), '2.0.0', 'wcpos_uninstall_pro_installed' );
 }
 
 /**
@@ -99,10 +134,16 @@ function woocommerce_pos_uninstall_user_meta(): void {
 		$wpdb->esc_like( '_wcpos_' ) . '%',
 		$wpdb->esc_like( 'wcpos_' ) . '%',
 	);
-	$where    = implode( ' OR ', array_fill( 0, \count( $patterns ), 'meta_key LIKE %s' ) );
+	$preserved = array();
+	if ( woocommerce_pos_uninstall_pro_installed() ) {
+		// Pro's bundled core refreshes cashier sessions with these; deleting them signs every cashier out.
+		$preserved[] = $wpdb->esc_like( '_woocommerce_pos_refresh_tokens' );
+	}
+	$where  = '(' . implode( ' OR ', array_fill( 0, \count( $patterns ), 'meta_key LIKE %s' ) ) . ')';
+	$where .= str_repeat( ' AND meta_key NOT LIKE %s', \count( $preserved ) );
 
 	// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $where is placeholders only, prepared here; prefix-scoped uninstall sweep.
-	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->usermeta} WHERE {$where}", $patterns ) );
+	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->usermeta} WHERE {$where}", array_merge( $patterns, $preserved ) ) );
 }
 
 /**
@@ -318,7 +359,8 @@ function woocommerce_pos_uninstall_report(): void {
 	// still point a self-hosted deployment at its own project, and sending its
 	// uninstall events to the default project instead would be wrong twice over.
 	$token = \defined( 'WCPOS_POSTHOG_TOKEN' ) ? (string) WCPOS_POSTHOG_TOKEN : 'phc_BhTJzZ7fXMqcD4MiaUJQsQqPkEpu94yoSAthXFBWemvd';
-	$token = (string) apply_filters( 'woocommerce_pos_posthog_token', $token );
+	$token = apply_filters( 'wcpos_posthog_token', $token );
+	$token = (string) apply_filters_deprecated( 'woocommerce_pos_posthog_token', array( $token ), '2.0.0', 'wcpos_posthog_token' );
 
 	$body = wp_json_encode(
 		array(
@@ -335,7 +377,8 @@ function woocommerce_pos_uninstall_report(): void {
 	}
 
 	$host = \defined( 'WCPOS_POSTHOG_HOST' ) ? (string) WCPOS_POSTHOG_HOST : 'https://ph.wcpos.com';
-	$host = (string) apply_filters( 'woocommerce_pos_posthog_host', $host );
+	$host = apply_filters( 'wcpos_posthog_host', $host );
+	$host = (string) apply_filters_deprecated( 'woocommerce_pos_posthog_host', array( $host ), '2.0.0', 'wcpos_posthog_host' );
 
 	wp_remote_post(
 		untrailingslashit( $host ) . '/capture/',
@@ -366,24 +409,52 @@ function woocommerce_pos_uninstall_site( ?bool $remove_all = null ): void {
 		$remove_all = woocommerce_pos_uninstall_remove_all_data();
 	}
 
+	// Pro bundles the free core, so artifacts shared with it (sync tables and
+	// their epoch, the print-job queue and its submit events, JWT secrets and
+	// tokens, translations, their cache transients, WooCommerce logs) stay while
+	// Pro is installed.
+	$pro_installed = woocommerce_pos_uninstall_pro_installed();
+
 	// 1. Clear scheduled events (all events per hook, regardless of args).
 	foreach ( woocommerce_pos_uninstall_cron_hooks() as $hook ) {
+		// Queued print jobs kept for Pro are only ever submitted from these one-time events.
+		if ( $pro_installed && 'wcpos_cloud_print_submit' === $hook ) {
+			continue;
+		}
 		wp_unschedule_hook( $hook );
 	}
-	if ( function_exists( 'as_unschedule_all_actions' ) ) {
+	// The background font install is queued on Action Scheduler (WooCommerce is
+	// normally still active during an uninstall). Cancel it like the cron events
+	// above, whether or not Pro is present: an installed-but-inactive Pro would
+	// leave the action with no callback, and an active Pro re-queues on demand.
+	if ( \function_exists( 'as_unschedule_all_actions' ) ) {
+		as_unschedule_all_actions( 'wcpos_install_font_packs' );
 		as_unschedule_all_actions( 'wcpos_receipt_snapshot_cleanup', array(), 'wcpos' );
 	}
-	wp_clear_scheduled_hook( 'wcpos_receipt_snapshot_cleanup' );
 
 	// 2. Drop plugin tables. All are derived from WooCommerce data and are
-	// rebuilt on reinstall.
-	foreach ( woocommerce_pos_uninstall_table_suffixes() as $suffix ) {
-		$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}{$suffix}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery -- Known plugin table names; uninstall context.
+	// rebuilt on reinstall; Pro's bundled core syncs from them while installed.
+	if ( ! $pro_installed ) {
+		foreach ( woocommerce_pos_uninstall_table_suffixes() as $suffix ) {
+			$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}{$suffix}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery -- Known plugin table names; uninstall context.
+		}
 	}
 
-	// 3. Delete plugin post types: the print-job queue always; receipt
-	// templates (including revisions and taxonomies) only on a full wipe.
-	woocommerce_pos_uninstall_post_type( 'wcpos_print_job' );
+	// Registers are user-authored configuration (names, store bindings, default
+	// floats, retired state) and the anchor of every sale's provenance, so the
+	// table goes only with a full wipe, like templates and the receipt sequence.
+	if ( $remove_all ) {
+		foreach ( woocommerce_pos_uninstall_configuration_table_suffixes() as $suffix ) {
+			$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}{$suffix}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery -- Known plugin table names; uninstall context.
+		}
+	}
+
+	// 3. Delete plugin post types: the print-job queue unless Pro is installed
+	// (its bundled core prints from it); receipt templates (including revisions
+	// and taxonomies) only on a full wipe.
+	if ( ! $pro_installed ) {
+		woocommerce_pos_uninstall_post_type( 'wcpos_print_job' );
+	}
 	if ( $remove_all ) {
 		woocommerce_pos_uninstall_post_type( 'wcpos_template' );
 		woocommerce_pos_uninstall_taxonomy( 'wcpos_template_type' );
@@ -403,10 +474,6 @@ function woocommerce_pos_uninstall_site( ?bool $remove_all = null ): void {
 		}
 		remove_role( 'cashier' );
 	}
-
-	// Pro bundles the free core, so artifacts shared with it (translations,
-	// their cache transients, WooCommerce logs) stay while Pro is installed.
-	$pro_installed = woocommerce_pos_uninstall_pro_installed();
 
 	// 5. Delete plugin options and transients. Both plugin prefixes are
 	// swept; WCPOS Pro's data is ALWAYS excluded (it belongs to a different
@@ -441,6 +508,13 @@ function woocommerce_pos_uninstall_site( ?bool $remove_all = null ): void {
 		// Version cache for the shared `woocommerce-pos` translations kept below.
 		$preserved[] = $wpdb->esc_like( '_transient_wcpos_i18n_woocommerce-pos_' ) . '%';
 		$preserved[] = $wpdb->esc_like( '_transient_timeout_wcpos_i18n_woocommerce-pos_' ) . '%';
+		// Pro's bundled core signs and verifies every cashier's tokens with these.
+		$preserved[] = $wpdb->esc_like( 'woocommerce_pos_secret_key' );
+		$preserved[] = $wpdb->esc_like( 'woocommerce_pos_refresh_secret_key' );
+		// The kept sync tables' generation id (Sync_Journal::EPOCH_OPTION); a new one makes every till resync from zero.
+		$preserved[] = $wpdb->esc_like( 'woocommerce_pos_sync_journal_epoch' );
+		// The kept journal's prune horizon per stream (Sync_Journal::PRUNE_WATERMARK_OPTION_PREFIX); without it a stale cursor misses pruned deletions.
+		$preserved[] = $wpdb->esc_like( 'wcpos_change_log_prune_watermark_' ) . '%';
 	}
 	if ( ! $remove_all ) {
 		$preserved = array_merge(
@@ -450,6 +524,9 @@ function woocommerce_pos_uninstall_site( ?bool $remove_all = null ): void {
 				$wpdb->esc_like( 'wcpos_active_template_' ) . '%',
 				$wpdb->esc_like( 'wcpos_template_order_' ) . '%',
 				$wpdb->esc_like( 'wcpos_disabled_virtual_templates_' ) . '%',
+				$wpdb->esc_like( 'wcpos_fiscal_sequence_' ) . '%',
+				// The register (name, default float, retired names) anchors every sale's provenance.
+				$wpdb->esc_like( 'wcpos_register' ),
 			)
 		);
 	}
@@ -492,6 +569,12 @@ function woocommerce_pos_uninstall_site( ?bool $remove_all = null ): void {
 			woocommerce_pos_uninstall_rmdir( trailingslashit( $uploads['basedir'] ) . 'wcpos-languages' );
 		}
 		woocommerce_pos_uninstall_rmdir( trailingslashit( $uploads['basedir'] ) . 'wcpos-templates' );
+
+		// Receipt fonts are re-downloadable derived state, but Pro's bundled core
+		// installs into the same directory, so they stay while Pro is installed.
+		if ( ! $pro_installed ) {
+			woocommerce_pos_uninstall_rmdir( trailingslashit( $uploads['basedir'] ) . 'wcpos-fonts' );
+		}
 
 		if ( ! $pro_installed ) {
 			$log_files = glob( trailingslashit( $uploads['basedir'] ) . 'wc-logs/woocommerce-pos-*.log' );
