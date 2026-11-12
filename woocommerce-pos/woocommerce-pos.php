@@ -3,7 +3,7 @@
  * Plugin Name:       WCPOS – Point of Sale for WooCommerce
  * Plugin URI:        https://wordpress.org/plugins/woocommerce-pos/
  * Description:       A simple front-end for taking WooCommerce orders at the Point of Sale. Requires <a href="http://wordpress.org/plugins/woocommerce/">WooCommerce</a>.
- * Version:           2.0.1
+ * Version:           2.0.2
  * Author:            kilbot
  * Author URI:        http://wcpos.com
  * Text Domain:       woocommerce-pos
@@ -14,7 +14,7 @@
  * Tested up to:      7.1
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
- * WC tested up to:   11.2.2
+ * WC tested up to:   11.3.0
  * WC requires at least: 9.0
  *
  * @see      http://wcpos.com
@@ -25,7 +25,7 @@ namespace WCPOS\WooCommercePOS;
 
 // Define plugin constants (use define() with checks to avoid conflicts when Pro plugin is active).
 if ( ! \defined( __NAMESPACE__ . '\VERSION' ) ) {
-	\define( __NAMESPACE__ . '\VERSION', '2.0.1' );
+	\define( __NAMESPACE__ . '\VERSION', '2.0.2' );
 }
 
 /*
