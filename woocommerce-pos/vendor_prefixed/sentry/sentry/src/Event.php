@@ -407,6 +407,8 @@ final class Event
         return $this;
     }
     /**
+     * @return array<string, MetricsSummary>
+     *
      * @deprecated Metrics are no longer supported. Metrics API is a no-op and will be removed in 5.x.
      */
     public function getMetricsSummary() : array
@@ -414,6 +416,8 @@ final class Event
         return [];
     }
     /**
+     * @param array<string, MetricsSummary> $metricsSummary
+     *
      * @deprecated Metrics are no longer supported. Metrics API is a no-op and will be removed in 5.x.
      */
     public function setMetricsSummary(array $metricsSummary) : self

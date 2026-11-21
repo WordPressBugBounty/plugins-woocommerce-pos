@@ -17,8 +17,9 @@ class CheckInItem implements EnvelopeItemInterface
         $checkIn = $event->getCheckIn();
         if ($checkIn !== null) {
             $payload = ['check_in_id' => $checkIn->getId(), 'monitor_slug' => $checkIn->getMonitorSlug(), 'status' => (string) $checkIn->getStatus(), 'duration' => $checkIn->getDuration(), 'release' => $checkIn->getRelease(), 'environment' => $checkIn->getEnvironment()];
-            if ($checkIn->getMonitorConfig() !== null) {
-                $payload['monitor_config'] = $checkIn->getMonitorConfig()->toArray();
+            $monitorConfig = $checkIn->getMonitorConfig();
+            if ($monitorConfig !== null) {
+                $payload['monitor_config'] = $monitorConfig->toArray();
             }
             if (!empty($event->getContexts()['trace'])) {
                 $payload['contexts']['trace'] = $event->getContexts()['trace'];

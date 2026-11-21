@@ -4,9 +4,12 @@ declare (strict_types=1);
 namespace WCPOS\Vendor\Sentry\Profiling;
 
 use WCPOS\Vendor\Sentry\ClientInterface;
+use WCPOS\Vendor\Sentry\ClientReport\ClientReportAggregator;
+use WCPOS\Vendor\Sentry\ClientReport\Reason;
 use WCPOS\Vendor\Sentry\Event;
 use WCPOS\Vendor\Sentry\Options;
 use WCPOS\Vendor\Sentry\SentrySdk;
+use WCPOS\Vendor\Sentry\Transport\DataCategory;
 use WCPOS\Vendor\Sentry\Util\SentryUid;
 use WCPOS\Vendor\Sentry\Util\TelemetryStorage;
 /**
@@ -386,6 +389,7 @@ final class ContinuousProfiler
         }
         if ($sampleCount < ProfileChunk::MIN_SAMPLE_COUNT) {
             $client->getOptions()->getLoggerOrNullLogger()->debug('The profile chunk does not contain enough samples, the profile chunk will be discarded.');
+            ClientReportAggregator::getInstance()->add(DataCategory::profileChunk(), Reason::insufficientData(), 1);
             return;
         }
         $profileData = ExcimerLogConverter::convert($entries, $client->getOptions());

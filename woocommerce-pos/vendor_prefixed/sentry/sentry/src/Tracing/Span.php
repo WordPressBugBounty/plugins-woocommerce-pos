@@ -267,6 +267,7 @@ class Span
         SentrySdk::getCurrentHub()->configureScope(static function (Scope $scope) use($statusCode) {
             $scope->setContext('response', ['status_code' => $statusCode]);
         });
+        $this->data['http.response.status_code'] = $statusCode;
         $status = SpanStatus::createFromHttpStatusCode($statusCode);
         if ($status !== SpanStatus::unknownError()) {
             $this->status = $status;
@@ -456,6 +457,8 @@ class Span
         return $this;
     }
     /**
+     * @return array<string, MetricsSummary>
+     *
      * @deprecated Metrics are no longer supported. Metrics API is a no-op and will be removed in 5.x.
      */
     public function getMetricsSummary() : array
@@ -463,6 +466,9 @@ class Span
         return [];
     }
     /**
+     * @param string|int|float $value
+     * @param string[]         $tags
+     *
      * @deprecated Metrics are no longer supported. Metrics API is a no-op and will be removed in 5.x.
      */
     public function setMetricsSummary(string $type, string $key, $value, Unit $unit, array $tags) : void

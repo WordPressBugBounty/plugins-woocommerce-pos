@@ -371,7 +371,7 @@ class Hub implements HubInterface
         return $fallbackSampleRate;
     }
     /**
-     * @param mixed $sampleRate
+     * @param float|int|null $sampleRate
      */
     private function sample($sampleRate) : bool
     {

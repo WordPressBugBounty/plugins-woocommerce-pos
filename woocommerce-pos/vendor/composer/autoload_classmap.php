@@ -543,6 +543,7 @@ return array(
     'WCPOS\\WooCommercePOS\\Sync\\Response_Telemetry' => $baseDir . '/includes/Sync/Response_Telemetry.php',
     'WCPOS\\WooCommercePOS\\Sync\\Retry_After_Mirror' => $baseDir . '/includes/Sync/Retry_After_Mirror.php',
     'WCPOS\\WooCommercePOS\\Sync\\Revision' => $baseDir . '/includes/Sync/Revision.php',
+    'WCPOS\\WooCommercePOS\\Sync\\Store_Repair' => $baseDir . '/includes/Sync/Store_Repair.php',
     'WCPOS\\WooCommercePOS\\Sync\\Store_Scope' => $baseDir . '/includes/Sync/Store_Scope.php',
     'WCPOS\\WooCommercePOS\\Sync\\Sync_Journal' => $baseDir . '/includes/Sync/Sync_Journal.php',
     'WCPOS\\WooCommercePOS\\Sync\\Sync_Journal_Purge' => $baseDir . '/includes/Sync/Sync_Journal_Purge.php',

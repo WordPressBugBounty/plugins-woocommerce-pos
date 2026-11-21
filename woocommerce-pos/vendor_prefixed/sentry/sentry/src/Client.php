@@ -31,7 +31,7 @@ class Client implements ClientInterface
     /**
      * The version of the SDK.
      */
-    public const SDK_VERSION = '4.36.0';
+    public const SDK_VERSION = '4.37.1';
     /**
      * Regex pattern to detect if a string is a regex pattern (starts and ends with / optionally followed by flags).
      * Supported flags: i (case-insensitive), m (multiline), s (dotall), u (unicode).
@@ -151,7 +151,6 @@ class Client implements ClientInterface
             return null;
         }
         try {
-            /** @var Result $result */
             $result = $this->transport->send($event);
             $event = $result->getEvent();
             if ($event !== null) {
@@ -265,20 +264,32 @@ class Client implements ClientInterface
         }
         if ($scope !== null) {
             $beforeEventProcessors = $event;
+            $spanCountBeforeEventProcessors = \count($event->getSpans());
             $event = $scope->applyToEvent($event, $hint, $this->options);
             if ($event === null) {
                 $this->logger->info(\sprintf('The %s will be discarded because one of the event processors returned "null".', $eventDescription), ['event' => $beforeEventProcessors]);
                 ClientReportAggregator::getInstance()->addEvent($beforeEventProcessors, Reason::eventProcessor());
                 return null;
             }
+            $this->recordRemovedSpans($spanCountBeforeEventProcessors, $event, Reason::eventProcessor());
         }
         $beforeSendCallback = $event;
+        $spanCountBeforeSendCallback = \count($event->getSpans());
         $event = $this->applyBeforeSendCallback($event, $hint);
         if ($event === null) {
             $this->logger->info(\sprintf('The %s will be discarded because the "%s" callback returned "null".', $eventDescription, $this->getBeforeSendCallbackName($beforeSendCallback)), ['event' => $beforeSendCallback]);
             ClientReportAggregator::getInstance()->addEvent($beforeSendCallback, Reason::beforeSend());
+            return null;
         }
+        $this->recordRemovedSpans($spanCountBeforeSendCallback, $event, Reason::beforeSend());
         return $event;
+    }
+    private function recordRemovedSpans(int $spanCountBefore, Event $event, Reason $reason) : void
+    {
+        $removedSpans = $spanCountBefore - \count($event->getSpans());
+        if ($removedSpans > 0) {
+            ClientReportAggregator::getInstance()->add(DataCategory::span(), $reason, $removedSpans);
+        }
     }
     private function getEventDescription(Event $event) : string
     {

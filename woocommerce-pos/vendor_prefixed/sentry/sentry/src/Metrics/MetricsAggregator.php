@@ -81,7 +81,6 @@ final class MetricsAggregator
         $traceId = new TraceId($traceContext['trace_id']);
         $spanId = new SpanId($traceContext['span_id']);
         $metricTypeClass = self::METRIC_TYPES[$type];
-        /** @var Metric $metric */
         $metric = new $metricTypeClass($name, $value, $traceId, $spanId, $attributes, \microtime(\true), $unit);
         if ($client !== null) {
             try {
@@ -98,7 +97,12 @@ final class MetricsAggregator
             }
         }
         $metrics = $this->getStorage($metricFlushThreshold);
+        $metricCount = \count($metrics);
         $metrics->push($metric);
+        // A full bounded buffer drops its oldest metric on push, so the count stays the same
+        if (\count($metrics) === $metricCount) {
+            ClientReportAggregator::getInstance()->add(DataCategory::metric(), Reason::bufferOverflow(), 1);
+        }
         if ($metricFlushThreshold !== null && \count($metrics) >= $metricFlushThreshold) {
             $this->flush($hub);
         }

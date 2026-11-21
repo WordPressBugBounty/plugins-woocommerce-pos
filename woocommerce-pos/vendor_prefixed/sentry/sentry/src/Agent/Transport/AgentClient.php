@@ -111,7 +111,7 @@ class AgentClient implements HttpClientInterface
             if (!$this->waitUntilSocketIsWritable($socket, $writeDeadline)) {
                 return \false;
             }
-            $bytesWritten = @\fwrite($socket, (string) \substr($payload, $totalWrittenBytes));
+            $bytesWritten = @\fwrite($socket, \substr($payload, $totalWrittenBytes));
             if ($bytesWritten === \false) {
                 return \false;
             }
